@@ -197,27 +197,38 @@ class OllamaLLMClient:
         user_message: str,
         max_tokens: int = LLM_MAX_TOKENS,
     ) -> str:
-        """Send a chat request to the local Ollama server."""
+        """Send a streaming chat request to Ollama to avoid CPU inference timeouts."""
+        import json as _json
         payload = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
             ],
-            "stream": False,
+            "stream": True,
             "options": {
                 "temperature": LLM_TEMPERATURE,
                 "num_predict": max_tokens,
             },
         }
         try:
-            resp = requests.post(
+            chunks = []
+            with requests.post(
                 f"{self.base_url}/api/chat",
                 json=payload,
-                timeout=120,
-            )
-            resp.raise_for_status()
-            return resp.json()["message"]["content"]
+                stream=True,
+                timeout=600,
+            ) as resp:
+                resp.raise_for_status()
+                for line in resp.iter_lines():
+                    if line:
+                        data = _json.loads(line)
+                        token = data.get("message", {}).get("content", "")
+                        if token:
+                            chunks.append(token)
+                        if data.get("done"):
+                            break
+            return "".join(chunks)
         except Exception as e:
             logger.error(f"Ollama LLM error: {e}")
             raise

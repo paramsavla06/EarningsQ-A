@@ -26,9 +26,19 @@ class GuardrailValidator:
         """
         # Keywords that indicate out-of-scope questions
         out_of_scope_keywords = [
+            # General Off-topic
             "recipe", "movie", "song", "game", "joke", "funny",
             "weather", "sports", "politics", "president", "election",
-            "love", "dating", "relationship"
+            "love", "dating", "relationship", "travel", "vacation",
+            "celebrity", "gossip", "entertainment", "history", "geography",
+            # Programming/Technical
+            "coding", "programming", "javascript", "python", "software development",
+            "sql", "html", "css", "bug fix", "refactor",
+            # Creative
+            "poem", "story", "creative writing", "lyrics",
+            # CRITICAL: Medical advice (since data is from hospitals)
+            "symptom", "diagnosis", "treatment for", "medicine for", "cure for",
+            "doctor recommendation", "surgery advice", "pain in my", "health advice"
         ]
 
         query_lower = query.lower()
@@ -40,9 +50,19 @@ class GuardrailValidator:
 
         # Check if query seems related to earnings
         earnings_keywords = [
+            # Financial Statements & Metrics
             "revenue", "profit", "margin", "earnings", "guidance", "quarter",
             "growth", "performance", "stock", "dividend", "cash flow",
-            "expense", "cost", "sales", "income", "loss", "eps"
+            "expense", "cost", "sales", "income", "loss", "eps", "ebitda",
+            "pat", "pbt", "capex", "opex", "balance sheet", "tax", "audit",
+            "debt", "leverage", "interest", "finance", "assets", "liabilities",
+            # Business Operations
+            "market share", "competition", "strategy", "acquisition", "merger",
+            "segment", "division", "geography", "unit", "facility",
+            "expansion", "hiring", "headcount", "attrition",
+            # Sector Specific (Hospitals)
+            "bed", "occupancy", "arpob", "patient", "clinical", "pharmacy",
+            "insurance", "tpa", "surgical", "diagnostic"
         ]
 
         has_earnings_keyword = any(
@@ -58,31 +78,45 @@ class GuardrailValidator:
         retrieved_documents: List,
         min_similarity: float = 0.3,
     ) -> Tuple[float, str]:
-        """Check confidence of retrieval based on match quality.
-
-        Args:
-            retrieved_documents: List of (Document, similarity) tuples
-            min_similarity: Minimum acceptable similarity score
-
-        Returns:
-            Tuple of (confidence_score, confidence_level)
+        """Check confidence of retrieval based on match quality and diversity.
         """
         if not retrieved_documents:
             return 0.0, "LOW (no documents retrieved)"
 
-        # Calculate average similarity
+        # 1. Get raw similarities
         similarities = [sim for _, sim in retrieved_documents]
-        avg_similarity = sum(similarities) / len(similarities)
+        
+        # 2. Extract unique companies (diversity factor)
+        unique_companies = len(set(doc.company_id for doc, _ in retrieved_documents))
+        
+        # 3. Calculate metrics
+        # max_similarity tells us if we found at least one "correct" anchor
+        max_sim = max(similarities)
+        avg_sim = sum(similarities) / len(similarities)
+        
+        # 4. Normalized score calculation
+        # Local embeddings (Ollama) often have lower raw similarity scores (e.g., 0.1 - 0.3)
+        # We boost the score if we found one strong anchor OR multiple companies.
+        
+        # Base confidence on the best available match (Max Similarity)
+        # 0.7+ is usually a direct semantic match
+        confidence_score = max_sim
+        
+        # Small diversity bonus (max +5% if we have multiple companies)
+        if unique_companies > 1:
+            confidence_score += 0.05
+            
+        confidence_score = min(0.99, confidence_score)
 
-        # Confidence levels
-        if avg_similarity >= 0.7:
+        # Confidence levels (Standard industry thresholds)
+        if confidence_score >= 0.7:
             confidence_level = "HIGH"
-        elif avg_similarity >= 0.4:
+        elif confidence_score >= 0.4:
             confidence_level = "MEDIUM"
         else:
             confidence_level = "LOW"
 
-        return avg_similarity, confidence_level
+        return confidence_score, confidence_level
 
     def add_confidence_note(
         self,

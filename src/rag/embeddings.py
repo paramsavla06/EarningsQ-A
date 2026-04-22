@@ -68,7 +68,10 @@ class EmbeddingPipeline:
         )
         response.raise_for_status()
         vals = response.json()["embedding"]
-        return np.array(vals, dtype=np.float32)
+        vals = np.array(vals, dtype=np.float32)
+        # Normalize vector
+        faiss.normalize_L2(vals.reshape(1, -1))
+        return vals
 
     def embed_text(self, text: str, max_retries: int = 8) -> np.ndarray:
         """Embed a single text using Gemini embedding model.
@@ -106,7 +109,10 @@ class EmbeddingPipeline:
                 else:
                     raise ValueError(f"Unknown embedding response format: {type(result)}")
 
-                return np.array(vals).astype(np.float32)
+                vals = np.array(vals).astype(np.float32)
+                # Normalize query vector
+                faiss.normalize_L2(vals.reshape(1, -1))
+                return vals
 
             except Exception as e:
                 err_str = str(e)
@@ -172,7 +178,9 @@ class EmbeddingPipeline:
         """
         embedding_dim = embeddings.shape[1]
 
-        # Use L2 distance (Euclidean distance)
+        # Use L2 distance (Euclidean distance) on normalized vectors
+        # This makes L2 distance equivalent to Cosine Similarity
+        faiss.normalize_L2(embeddings)
         index = faiss.IndexFlatL2(embedding_dim)
         index.add(embeddings)
 

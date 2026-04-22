@@ -43,7 +43,7 @@ TOP_K_RETRIEVAL = int(os.getenv("TOP_K_RETRIEVAL", 5))
 
 # LLM Parameters
 LLM_TEMPERATURE = 0.3   # Lower = more factual, less hallucination
-LLM_MAX_TOKENS = 2048   # More room for detailed financial answers
+LLM_MAX_TOKENS = 512    # Faster CPU inference for llama3.2
 
 # Retry Configuration
 MAX_RETRIES = 3
