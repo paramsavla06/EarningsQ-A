@@ -1,0 +1,56 @@
+"""Sample earnings call transcript for testing."""
+
+# AAPL Q1 2024 Earnings Call - January 30, 2024
+
+CEO Tim Cook:
+Welcome to Apple's first fiscal quarter 2024 earnings call. I'm excited to report strong results across all our product categories and services.
+
+Revenue reached $119.6 billion, up 2% year-over-year. iPhone revenue was $69.3 billion, demonstrating continued strength in our flagship product line.
+
+Mac revenue grew to $8.5 billion, benefiting from strong MacBook Pro demand and M3 chip adoption. iPad revenue was $6.7 billion, up 5% from last year.
+
+Wearables revenue reached $14.1 billion, with the Apple Watch Series 9 and new AirPods Pro seeing excellent customer response.
+
+Services revenue hit $22.3 billion, our strongest services quarter ever, reflecting growing attach rates across our ecosystem.
+
+CFO Luca Maestri:
+Gross margin came in at 46.2%, up 150 basis points year-over-year, driven by operational efficiency and favorable product mix.
+
+Operating expenses were $14.2 billion, which represented disciplined cost management.
+
+Operating cash flow was strong at $38.4 billion for the six-month period, reflecting healthy underlying business dynamics.
+
+We returned $27.2 billion to shareholders through buybacks and dividends during the period.
+
+For Q2 guidance, we expect revenue between $91 billion and $95 billion, representing modest growth driven by new product launches.
+
+Analyst Question 1:
+Regarding iPhone sales momentum, can you speak to seasonal trends and China performance?
+
+Tim Cook:
+China remains a critical market for us. In Greater China, we saw growth despite the competitive environment. The iPhone 15 lineup has been well received, particularly the Pro models with their advanced camera capabilities.
+
+We're seeing strong demand in urban markets and expect this momentum to continue into the calendar year 2024. The 3nm process in A17 Pro chips is resonating with customers seeking performance and efficiency.
+
+Analyst Question 2:
+What about margins and product mix going forward?
+
+Luca Maestri:
+We expect margins to remain healthy. The Services segment, growing at 16% year-over-year, carries higher margins and contributes significantly to profitability.
+
+We're investing in R&D for AI capabilities and advanced materials, which will support future growth. However, we maintain disciplined spending and expect operating leverage to drive margin expansion.
+
+We're cautiously optimistic about FY2024, with expectations for mid-single-digit revenue growth and strong Services momentum continuing.
+
+Analyst Question 3:
+Guidance on specific products - any color on Apple Vision Pro sales expectations?
+
+Tim Cook:
+Apple Vision Pro launched at $3,499 and represents the beginning of a new era of spatial computing. While initial volumes will be modest relative to our other product categories, we view this as a multi-year opportunity.
+
+We're seeing strong pre-orders and customer enthusiasm. The enterprise applications are particularly interesting - we're seeing adoption in healthcare, design, and engineering.
+
+While Vision Pro won't materially impact revenue this year, we're excited about the long-term potential and are already developing next-generation products.
+
+---
+END OF TRANSCRIPT
