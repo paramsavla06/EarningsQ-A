@@ -1,6 +1,8 @@
-"""Google Gemini client wrapper with retry logic."""
+"""LLM client: Gemini, Ollama, or Mock."""
 
+import os
 import logging
+import requests
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -13,7 +15,17 @@ try:
 except ImportError:
     import genai
 
-from src.config import GEMINI_API_KEY, LLM_MODEL, LLM_TEMPERATURE, LLM_MAX_TOKENS, USE_MOCK_LLM
+from src.config import (
+    GEMINI_API_KEY, LLM_MODEL, LLM_TEMPERATURE, LLM_MAX_TOKENS, USE_MOCK_LLM,
+    USE_OLLAMA_LLM, OLLAMA_BASE_URL, OLLAMA_LLM_MODEL,
+)
+
+# Force the SDK to use our configured key.
+# The google-genai SDK prefers GOOGLE_API_KEY over an explicitly passed api_key
+# when both system env var and .env are present, so we override it here.
+if GEMINI_API_KEY:
+    os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY
+    os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -171,12 +183,56 @@ class LLMClient:
         return len(text) // 4
 
 
-def get_llm_client() -> LLMClient:
-    """Factory function to get appropriate LLM client based on config.
+class OllamaLLMClient:
+    """LLM client backed by a local Ollama server (no API key required)."""
 
-    Returns:
-        MockLLMClient if USE_MOCK_LLM=true, otherwise LLMClient
+    def __init__(self, base_url: str = OLLAMA_BASE_URL, model: str = OLLAMA_LLM_MODEL):
+        self.base_url = base_url
+        self.model = model
+        logger.info(f"Using Ollama LLM: {model} @ {base_url}")
+
+    def answer_question(
+        self,
+        system_prompt: str,
+        user_message: str,
+        max_tokens: int = LLM_MAX_TOKENS,
+    ) -> str:
+        """Send a chat request to the local Ollama server."""
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            "stream": False,
+            "options": {
+                "temperature": LLM_TEMPERATURE,
+                "num_predict": max_tokens,
+            },
+        }
+        try:
+            resp = requests.post(
+                f"{self.base_url}/api/chat",
+                json=payload,
+                timeout=120,
+            )
+            resp.raise_for_status()
+            return resp.json()["message"]["content"]
+        except Exception as e:
+            logger.error(f"Ollama LLM error: {e}")
+            raise
+
+    def get_token_count_estimate(self, text: str) -> int:
+        return len(text) // 4
+
+
+def get_llm_client():
+    """Factory: returns the right LLM client based on config.
+
+    Priority: MockLLMClient > OllamaLLMClient > LLMClient (Gemini)
     """
     if USE_MOCK_LLM:
         return MockLLMClient()
+    if USE_OLLAMA_LLM:
+        return OllamaLLMClient()
     return LLMClient()

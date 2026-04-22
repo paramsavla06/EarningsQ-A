@@ -1,8 +1,10 @@
 """Embedding pipeline: Embed documents and store in FAISS."""
 
+import os
 import logging
 import time
 import re
+import requests
 import numpy as np
 import pickle
 from pathlib import Path
@@ -18,13 +20,22 @@ except ImportError:
 
 import faiss
 
-from src.config import GEMINI_API_KEY, EMBEDDING_MODEL, USE_MOCK_LLM
+from src.config import (
+    GEMINI_API_KEY, EMBEDDING_MODEL, USE_MOCK_LLM,
+    USE_OLLAMA_EMBED, OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL,
+)
 from src.rag.ingestion import Document
+
+# Force the SDK to use our configured key, not any stale system GOOGLE_API_KEY
+if GEMINI_API_KEY:
+    os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY
+    os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
-# Embedding dimension for gemini-embedding-001
-EMBEDDING_DIM = 3072
+# Embedding dimensions by backend
+# nomic-embed-text (Ollama) = 768, gemini-embedding-001 = 3072
+EMBEDDING_DIM = 768 if USE_OLLAMA_EMBED else 3072
 
 
 class EmbeddingPipeline:
@@ -43,9 +54,21 @@ class EmbeddingPipeline:
         self.documents = []
         self.embeddings = None
 
-        # Initialize Gemini client if not in mock mode
-        if not USE_MOCK_LLM:
+        if USE_OLLAMA_EMBED:
+            logger.info(f"Using Ollama embeddings: {OLLAMA_EMBED_MODEL} @ {OLLAMA_BASE_URL}")
+        elif not USE_MOCK_LLM:
             self.client = genai.Client(api_key=api_key)
+
+    def _embed_via_ollama(self, text: str) -> np.ndarray:
+        """Embed text using the local Ollama server."""
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/embeddings",
+            json={"model": OLLAMA_EMBED_MODEL, "prompt": text},
+            timeout=60,
+        )
+        response.raise_for_status()
+        vals = response.json()["embedding"]
+        return np.array(vals, dtype=np.float32)
 
     def embed_text(self, text: str, max_retries: int = 8) -> np.ndarray:
         """Embed a single text using Gemini embedding model.
@@ -65,6 +88,9 @@ class EmbeddingPipeline:
         """
         if USE_MOCK_LLM:
             return np.random.randn(EMBEDDING_DIM).astype(np.float32)
+
+        if USE_OLLAMA_EMBED:
+            return self._embed_via_ollama(text)
 
         for attempt in range(max_retries + 1):
             try:

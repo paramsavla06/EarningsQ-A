@@ -19,6 +19,17 @@ LOGS_DIR.mkdir(exist_ok=True)
 # Mock Mode (for development without API calls)
 USE_MOCK_LLM = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
 
+# Ollama (local) configuration
+USE_OLLAMA = os.getenv("USE_OLLAMA", "false").lower() == "true"
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "llama3.2:latest")
+OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+
+# Granular Ollama control (override USE_OLLAMA per component)
+# Defaults to USE_OLLAMA if not explicitly set
+USE_OLLAMA_EMBED = os.getenv("USE_OLLAMA_EMBED", str(USE_OLLAMA)).lower() == "true"
+USE_OLLAMA_LLM = os.getenv("USE_OLLAMA_LLM", str(USE_OLLAMA)).lower() == "true"
+
 # Google Gemini Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 LLM_MODEL = os.getenv("LLM_MODEL", "gemini-2.0-flash")
@@ -31,14 +42,14 @@ CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 50))
 TOP_K_RETRIEVAL = int(os.getenv("TOP_K_RETRIEVAL", 5))
 
 # LLM Parameters
-LLM_TEMPERATURE = 0.7
-LLM_MAX_TOKENS = 1024
+LLM_TEMPERATURE = 0.3   # Lower = more factual, less hallucination
+LLM_MAX_TOKENS = 2048   # More room for detailed financial answers
 
 # Retry Configuration
 MAX_RETRIES = 3
 INITIAL_RETRY_DELAY = 1  # seconds
 
 # Validation
-if not USE_MOCK_LLM and not GEMINI_API_KEY:
+if not USE_MOCK_LLM and not USE_OLLAMA and not USE_OLLAMA_LLM and not GEMINI_API_KEY:
     raise ValueError(
-        "GEMINI_API_KEY not set. Please check your .env file or set USE_MOCK_LLM=true for development.")
+        "GEMINI_API_KEY not set. Set it in .env, or use USE_OLLAMA=true for local inference.")
