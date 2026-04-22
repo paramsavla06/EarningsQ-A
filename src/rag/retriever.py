@@ -3,7 +3,6 @@
 import logging
 import numpy as np
 from typing import List, Optional, Tuple
-from pathlib import Path
 
 from src.rag.ingestion import Document
 from src.rag.embeddings import EmbeddingPipeline

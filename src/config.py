@@ -22,7 +22,7 @@ USE_MOCK_LLM = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
 # Google Gemini Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 LLM_MODEL = os.getenv("LLM_MODEL", "gemini-2.0-flash")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
 
 # Application Configuration
 MAX_CONVERSATION_HISTORY = int(os.getenv("MAX_CONVERSATION_HISTORY", 10))

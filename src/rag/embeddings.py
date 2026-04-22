@@ -1,10 +1,12 @@
 """Embedding pipeline: Embed documents and store in FAISS."""
 
 import logging
+import time
+import re
 import numpy as np
 import pickle
 from pathlib import Path
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 
 try:
     import google.genai as genai
@@ -20,6 +22,9 @@ from src.config import GEMINI_API_KEY, EMBEDDING_MODEL, USE_MOCK_LLM
 from src.rag.ingestion import Document
 
 logger = logging.getLogger(__name__)
+
+# Embedding dimension for gemini-embedding-001
+EMBEDDING_DIM = 3072
 
 
 class EmbeddingPipeline:
@@ -40,36 +45,69 @@ class EmbeddingPipeline:
 
         # Initialize Gemini client if not in mock mode
         if not USE_MOCK_LLM:
-            genai.configure(api_key=api_key)
             self.client = genai.Client(api_key=api_key)
 
-    def embed_text(self, text: str) -> np.ndarray:
+    def embed_text(self, text: str, max_retries: int = 8) -> np.ndarray:
         """Embed a single text using Gemini embedding model.
+
+        Retries automatically on 429 rate-limit responses using the
+        retryDelay value from the API error. Raises on daily quota exhaustion.
 
         Args:
             text: Text to embed
+            max_retries: Maximum retry attempts for transient rate limits
 
         Returns:
             Embedding vector (numpy array)
+
+        Raises:
+            RuntimeError: If daily quota is exhausted
         """
         if USE_MOCK_LLM:
-            # Return a random embedding for mock mode
-            return np.random.randn(768).astype(np.float32)
+            return np.random.randn(EMBEDDING_DIM).astype(np.float32)
 
-        try:
-            # Use Gemini embedding API
-            result = self.client.models.embed_content(
-                model=self.embedding_model,
-                content=text,
-            )
+        for attempt in range(max_retries + 1):
+            try:
+                result = self.client.models.embed_content(
+                    model=self.embedding_model,
+                    contents=text,
+                )
 
-            embedding = np.array(result['embedding']).astype(np.float32)
-            return embedding
+                if hasattr(result, 'embeddings') and result.embeddings:
+                    vals = result.embeddings[0].values
+                elif isinstance(result, dict) and 'embedding' in result:
+                    vals = result['embedding']
+                else:
+                    raise ValueError(f"Unknown embedding response format: {type(result)}")
 
-        except Exception as e:
-            logger.error(f"Error embedding text: {e}")
-            # Fallback to random embedding
-            return np.random.randn(768).astype(np.float32)
+                return np.array(vals).astype(np.float32)
+
+            except Exception as e:
+                err_str = str(e)
+
+                # Daily quota exhausted — cannot recover by waiting seconds
+                if "PerDay" in err_str:
+                    raise RuntimeError(
+                        "Gemini free-tier daily quota exhausted (1000 requests/day). "
+                        "Wait until midnight Pacific Time and re-run --index, "
+                        "or enable billing at https://console.cloud.google.com/billing"
+                    ) from e
+
+                # Per-minute / burst rate limit — read retry delay and sleep
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                    match = re.search(r"'retryDelay':\s*'(\d+(?:\.\d+)?)s'", err_str)
+                    wait = float(match.group(1)) + 1.0 if match else (2 ** attempt) * 5
+                    logger.warning(
+                        f"Rate limited (429). Waiting {wait:.1f}s "
+                        f"(retry {attempt + 1}/{max_retries})..."
+                    )
+                    time.sleep(wait)
+                    continue
+
+                logger.error(f"Embedding error (attempt {attempt + 1}): {e}")
+                raise
+
+        raise RuntimeError(f"Failed to embed text after {max_retries} retries.")
 
     def embed_documents(self, documents: List[Document], batch_size: int = 10) -> np.ndarray:
         """Embed a batch of documents.
