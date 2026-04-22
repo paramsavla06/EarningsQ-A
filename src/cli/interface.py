@@ -68,13 +68,22 @@ def setup_logging() -> None:
     """Setup logging configuration."""
     log_file = LOGS_DIR / \
         f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+    # File handler: full details with timestamp
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    ))
+
+    # Console handler: simple format (no timestamp)
+    console_handler = logging.StreamHandler(encoding='utf-8')
+    console_handler.setFormatter(logging.Formatter(
+        "%(message)s"
+    ))
+
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler(),
-        ],
+        handlers=[file_handler, console_handler],
     )
 
 

@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Tuple
 import pdfplumber
 
 from src.config import DATA_DIR, CHUNK_SIZE, CHUNK_OVERLAP

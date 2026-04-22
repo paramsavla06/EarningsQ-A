@@ -1,1 +1,7 @@
-"""Empty __init__ file for cli module."""
+"""CLI (Command-Line Interface) module."""
+
+from src.cli.interface import main
+
+__all__ = [
+    "main",
+]
