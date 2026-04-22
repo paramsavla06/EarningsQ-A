@@ -1,9 +1,28 @@
-.venv/
-*.pyc
-__pycache__/
+# Environments
 .env
+.venv/
+venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Application specific
 logs/
 rag_index/
+data/
+
+# Data files
 *.pkl
 *.npy
+*.csv
+*.jsonl
+
+# OS and IDEs
 .DS_Store
+.vscode/
+.idea/
+*.swp
