@@ -1,9 +1,9 @@
 """LLM (Large Language Model) module."""
 
-from src.llm.gemini import GeminiLLM
-from src.llm.mock import MockLLM
+from src.llm.client import LLMClient, MockLLMClient, get_llm_client
 
 __all__ = [
-    "GeminiLLM",
-    "MockLLM",
+    "LLMClient",
+    "MockLLMClient",
+    "get_llm_client",
 ]

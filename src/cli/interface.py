@@ -66,6 +66,8 @@ class ConversationHistory:
 
 def setup_logging() -> None:
     """Setup logging configuration."""
+    import sys
+    
     log_file = LOGS_DIR / \
         f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
@@ -76,10 +78,17 @@ def setup_logging() -> None:
     ))
 
     # Console handler: simple format (no timestamp)
-    console_handler = logging.StreamHandler(encoding='utf-8')
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+    console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(logging.Formatter(
         "%(message)s"
     ))
+
+    # Clear any existing handlers to avoid duplicates
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
 
     logging.basicConfig(
         level=logging.INFO,
