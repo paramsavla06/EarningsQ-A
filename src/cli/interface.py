@@ -9,12 +9,10 @@ from pathlib import Path
 import click
 
 from src.config import LOGS_DIR, MAX_CONVERSATION_HISTORY, USE_MOCK_LLM, DATA_DIR
-from src.llm.client import get_llm_client
+from src.llm import get_llm_client
 from src.llm.prompts import SYSTEM_PROMPT, get_retrieval_prompt
-from src.rag.ingestion import TranscriptIngestionPipeline
-from src.rag.embeddings import EmbeddingPipeline
-from src.rag.retriever import Retriever
-from src.guardrails.validator import GuardrailValidator
+from src.rag import TranscriptIngestionPipeline, EmbeddingPipeline, Retriever
+from src.guardrails import GuardrailValidator
 
 logger = logging.getLogger(__name__)
 

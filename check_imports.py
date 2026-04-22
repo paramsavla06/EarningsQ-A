@@ -21,10 +21,10 @@ def check_imports():
         return False
 
     try:
-        from src.llm.client import get_llm_client, LLMClient, MockLLMClient
-        print("✓ src.llm.client")
+        from src.llm import get_llm_client, LLMClient, MockLLMClient
+        print("✓ src.llm")
     except Exception as e:
-        print(f"✗ src.llm.client: {e}")
+        print(f"✗ src.llm: {e}")
         return False
 
     try:
@@ -35,38 +35,24 @@ def check_imports():
         return False
 
     try:
-        from src.rag.ingestion import TranscriptIngestionPipeline, Document
-        print("✓ src.rag.ingestion")
+        from src.rag import TranscriptIngestionPipeline, Document, EmbeddingPipeline, Retriever
+        print("✓ src.rag")
     except Exception as e:
-        print(f"✗ src.rag.ingestion: {e}")
+        print(f"✗ src.rag: {e}")
         return False
 
     try:
-        from src.rag.embeddings import EmbeddingPipeline
-        print("✓ src.rag.embeddings")
+        from src.guardrails import GuardrailValidator
+        print("✓ src.guardrails")
     except Exception as e:
-        print(f"✗ src.rag.embeddings: {e}")
+        print(f"✗ src.guardrails: {e}")
         return False
 
     try:
-        from src.rag.retriever import Retriever
-        print("✓ src.rag.retriever")
+        from src.cli import EarningsQACLI, main
+        print("✓ src.cli")
     except Exception as e:
-        print(f"✗ src.rag.retriever: {e}")
-        return False
-
-    try:
-        from src.guardrails.validator import GuardrailValidator
-        print("✓ src.guardrails.validator")
-    except Exception as e:
-        print(f"✗ src.guardrails.validator: {e}")
-        return False
-
-    try:
-        from src.cli.interface import EarningsQACLI, main
-        print("✓ src.cli.interface")
-    except Exception as e:
-        print(f"✗ src.cli.interface: {e}")
+        print(f"✗ src.cli: {e}")
         return False
 
     print("\n✅ All imports successful!")

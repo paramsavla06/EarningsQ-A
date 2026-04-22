@@ -3,7 +3,7 @@
 import logging
 from typing import Tuple, List
 
-from src.llm.client import get_llm_client
+from src.llm import get_llm_client
 from src.config import TOP_K_RETRIEVAL
 
 logger = logging.getLogger(__name__)
