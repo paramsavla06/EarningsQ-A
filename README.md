@@ -1,155 +1,122 @@
 # Earnings Call Q&A Chatbot
 
-A production-ready RAG-based chatbot that answers questions about company earnings calls using semantic search and LLM-powered responses.
+This project is a retrieval-augmented chatbot for asking questions about earnings-call transcripts. It supports exact metric extraction, transcript search, and follow-up questions that reuse recent conversation context when the company or quarter was already established.
 
 ## Features
 
-- **RAG Pipeline**: Semantic search with FAISS vector store for relevant context retrieval
-- **Multi-turn Conversation**: Context-aware dialogue with sliding conversation history
-- **PDF Ingestion**: Automatic PDF parsing, text extraction, and intelligent chunking
-- **Embeddings**: Google Gemini embeddings with mock mode for development
-- **Company & Quarter Filtering**: Filter queries to specific companies or quarters
-- **Guardrails**: Scope validation, confidence scoring, response validation
-- **Mock LLM Mode**: Develop without API quota limits
-- **Audit Logging**: JSONL audit trail of all interactions
+- **FAISS-backed retrieval** over chunked transcript PDFs
+- **Exact metric answers** for revenue, total income, PAT, EBITDA, margins, cash flow, capex, PBT, and ARPOB
+- **Company and quarter filtering** via CLI flags
+- **History-aware follow-ups** for vague questions like “what was the reason behind its growth?” while history is still present
+- **Guardrails** for scope checks, confidence handling, and fallback responses
+- **Mock LLM mode** for fast local development without API calls
+- **Audit logging** of questions and answers to JSONL
 
+## Supported Companies
+
+The current dataset and index are organized by company ID:
+
+- `532400` - Birlasoft
+- `542652` - Polycab
+- `543654` - Medanta / Global Health
+- `544350` - Dr. Agarwal's Eye Hospital
 
 ## Project Structure
 
 ```
-ResearchFundamentalAssignment/
-├── earnings-qa/                 # This project
-│   ├── main.py                  # Entrypoint
-│   ├── requirements.txt          # Dependencies
-│   ├── .env                      # Configuration (mock mode enabled)
-│   ├── .env.example              # Configuration template
-│   ├── README.md                 # This file
-│   ├── DESIGN.md                 # Architecture decisions
-│   ├── IMPLEMENTATION.md         # Detailed implementation guide
-│   ├── src/
-│   │   ├── config.py             # Settings + constants
-│   │   ├── cli/
-│   │   │   └── interface.py      # Click CLI, chat loop, multi-turn conversation
-│   │   ├── llm/
-│   │   │   ├── client.py         # MockLLMClient + Gemini wrapper, retry logic
-│   │   │   └── prompts.py        # System prompt + retrieval prompt builder
-│   │   ├── rag/
-│   │   │   ├── ingestion.py      # PDF extraction, chunking, Document class
-│   │   │   ├── embeddings.py     # Embedding generation, FAISS indexing, persistence
-│   │   │   └── retriever.py      # Query → top-K retrieval with filtering
-│   │   ├── guardrails/
-│   │   │   └── validator.py      # Scope checking, confidence scoring, validation
-│   │   └── __init__.py
-│   ├── logs/                     # Audit logs (JSONL format)
-│   └── rag_index/                # Cached FAISS index (auto-created)
-│       ├── index.faiss
-│       ├── embeddings.npy
-│       └── documents.pkl
-│
-└── files/                        # Dataset (earnings call transcripts)
-    ├── 532400/
-    │   ├── Q1/
-    │   │   └── 20240808_532400_EarningsCallTranscript.pdf
-    │   ├── Q2/
-    │   ├── Q3/
-    │   └── Q4/
-    ├── 542652/
-    │   └── ... (quarters with PDFs)
-    ├── 543654/
-    │   └── ... (quarters with PDFs)
-    └── 544350/
-        └── ... (quarters with PDFs)
+earnings-qa/
+├── main.py
+├── requirements.txt
+├── README.md
+├── WALKTHROUGH.md
+├── DESIGN.md
+├── IMPLEMENTATION.md
+├── src/
+│   ├── config.py
+│   ├── cli/
+│   │   └── interface.py
+│   ├── llm/
+│   │   ├── client.py
+│   │   └── prompts.py
+│   ├── rag/
+│   │   ├── ingestion.py
+│   │   ├── embeddings.py
+│   │   └── retriever.py
+│   └── guardrails/
+│       └── validator.py
+├── logs/
+├── rag_index/
+└── ../files/
 ```
 
-## Quick Start
-
-### Setup
+## Setup
 
 ```bash
-# 1. Navigate to the project
 cd earnings-qa
-
-# 2. Install dependencies
 pip install -r requirements.txt
-
-# 3. Configure environment (optional - mock mode enabled by default)
 cp .env.example .env
-# For production with real LLM: GEMINI_API_KEY=your_key
-# For development: USE_MOCK_LLM=true (instant responses, no quota)
 ```
 
-### Usage - Indexing
+For local development, set:
+
+```env
+USE_MOCK_LLM=true
+```
+
+If you want a real LLM backend, set the appropriate API key or Ollama settings in `.env`.
+
+## Build the Index
+
+The chatbot reads transcripts from `../files/` and stores the searchable index in `rag_index/`.
 
 ```bash
-# Create RAG index from earnings call PDFs (../files/)
 python main.py --index
-
-# List all indexed documents
 python main.py --list-docs
-
-# The index is auto-loaded on subsequent runs
 ```
 
-### Usage - Chat
+`--index` creates or refreshes the FAISS index. `--list-docs` prints the indexed company/quarter chunks so you can confirm the data that is actually loaded.
+
+## Run Chat
 
 ```bash
-# Interactive chat (all companies, all quarters)
 python main.py
-
-# Filter by company ID (e.g., 532400)
-python main.py --company 532400
-
-# Filter by company and quarter (e.g., 542652, Q2)
-python main.py --company 542652 --quarter Q2
+python main.py --company 543654
+python main.py --company 542652 --quarter Q3
 ```
 
-### Example Session
+Inside chat you can type:
 
-```
-$ python main.py --company 532400
-⚠️ No RAG index loaded.
-Would you like to index transcripts now? [y/N]: y
-📑 Indexing earnings call transcripts...
-✓ Ingested 1,250 document chunks
-✓ Index created successfully
+- `clear` to reset conversation history
+- `quit` or `exit` to end the session
 
-============================================================
-Earnings Call Q&A Chatbot
-============================================================
-Filters active: Company: 532400
-Type 'quit' or 'exit' to end conversation
-============================================================
+## How Answers Work
 
-You: What was the Q1 revenue?
-Assistant: Revenue in Q1 was $119.6B, representing 2% YoY growth...
+The CLI first tries deterministic extraction for exact finance questions. If the metric is clear, it answers directly from the transcript text. If not, it retrieves relevant chunks and asks the LLM to answer from that context.
 
-You: What about gross margins?
-Assistant: [Context from retriever] Gross margin improved 150 bps to 46.2%...
-📊 Confidence: 85% - Strong matching context found.
-```
+Important behavior:
 
-## Architecture Decisions
+- Exact figures are preferred over summary language.
+- Questions outside the active company or quarter filters are rejected.
+- Vague growth questions can use recent conversation history only while that history still exists.
+- After `clear`, the app no longer has prior context and will ask you to specify the company and quarter again.
 
-See [DESIGN.md](DESIGN.md) for detailed design rationale, scalability considerations, and tradeoff analysis.
+## Development Notes
 
-## Development
+The most important source files are:
 
-```bash
-# Run tests (TODO)
-pytest
+- [src/cli/interface.py](src/cli/interface.py) for chat flow, direct answers, filters, and history handling
+- [src/rag/retriever.py](src/rag/retriever.py) for retrieval and company/quarter intent detection
+- [src/guardrails/validator.py](src/guardrails/validator.py) for scope checks and response validation
+- [src/llm/prompts.py](src/llm/prompts.py) for system and retrieval prompts
 
-# Format code
-black src/ main.py
+## Notes on Data and Caching
 
-# Check types (TODO)
-mypy src/ main.py
-```
+- The index is loaded from `rag_index/` if it already exists.
+- Different environments can answer differently if they are using different cached indexes.
+- The transcript source files live under `../files/` and are not embedded in the index until you run `--index`.
 
-## Future Enhancements
+## Future Work
 
-- Multi-turn RAG with context refinement
-- Async FastAPI server for production deployment
-- Redis caching for frequent queries
-- Pinecone/Weaviate for enterprise-scale vector store
-- Advanced query normalization (ticker → company name mapping)
-- Fine-tuned embedding models for domain-specific matching
+- Add automated tests for exact-answer ranking and history-aware follow-ups
+- Add a startup summary of the loaded index contents
+- Improve query normalization for more company aliases and shorthand references
