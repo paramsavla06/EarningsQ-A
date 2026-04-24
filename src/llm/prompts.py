@@ -15,11 +15,6 @@ STRICT CONSTRAINTS:
 8. If multiple financial values appear in the context, choose the one tied to the requested metric label and the requested company/quarter. Do not substitute growth commentary for the actual requested metric.
 9. For every figure, mention the company ID and quarter as seen in the brackets [e.g., 543654 Q32025].
 10. If the user asks to summarize a quarter, give a compact but useful recap: 3-5 sentences, or 3 short bullets, covering the main financial metrics if available (revenue, PAT, EBITDA, margin, growth, and major operating highlights). Do not reduce the answer to a single sentence.
-
-FORMAT:
-- Direct Answer
-- Detailed metrics with citations
-- List of missing data if applicable
 """
 
 

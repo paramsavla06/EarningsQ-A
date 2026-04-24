@@ -1,7 +1,7 @@
 """Guardrails: Validate queries and responses for safety and quality."""
 
 import logging
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 from src.llm import get_llm_client
 
@@ -38,7 +38,10 @@ class GuardrailValidator:
             "poem", "story", "creative writing", "lyrics",
             # CRITICAL: Medical advice (since data is from hospitals)
             "symptom", "diagnosis", "treatment for", "medicine for", "cure for",
-            "doctor recommendation", "surgery advice", "pain in my", "health advice"
+            "doctor recommendation", "surgery advice", "pain in my", "health advice",
+            # Casual Chatter / Greetings
+            "how are you", "how is your day", "how's your day", "good morning", 
+            "good afternoon", "good evening", "what's up", "hello there"
         ]
 
         query_lower = query.lower()
@@ -46,32 +49,16 @@ class GuardrailValidator:
         # Check keywords
         for keyword in out_of_scope_keywords:
             if keyword in query_lower:
-                return False, f"Your question contains '{keyword}', which is outside the scope of earnings call analysis."
+                return False, (
+                    "I'd love to chat about that, but my expertise is strictly limited to financial earnings calls and company performance. "
+                    "Please ask me a question about revenue, market trends, business strategy, or a specific company's latest quarter!"
+                )
 
-        # Check if query seems related to earnings
-        earnings_keywords = [
-            # Financial Statements & Metrics
-            "revenue", "profit", "margin", "earnings", "guidance", "quarter",
-            "growth", "performance", "stock", "dividend", "cash flow",
-            "expense", "cost", "sales", "income", "loss", "eps", "ebitda",
-            "pat", "pbt", "capex", "opex", "balance sheet", "tax", "audit",
-            "debt", "leverage", "interest", "finance", "assets", "liabilities",
-            # Business Operations
-            "market share", "competition", "strategy", "acquisition", "merger",
-            "segment", "division", "geography", "unit", "facility",
-            "expansion", "hiring", "headcount", "attrition",
-            # Sector Specific (Hospitals)
-            "bed", "occupancy", "arpob", "patient", "clinical", "pharmacy",
-            "insurance", "tpa", "surgical", "diagnostic"
-        ]
-
-        has_earnings_keyword = any(
-            keyword in query_lower for keyword in earnings_keywords)
-
-        if not has_earnings_keyword and len(query) < 10:
-            return True, "Query is very short but will attempt to answer from earnings context."
-
-        return True, "Query is in scope."
+        # Instead of strictly requiring a financial keyword to be present (which blocks 
+        # qualitative questions like "What are your AI plans?"), we will default to 
+        # allowing the query as long as it didn't trigger any out_of_scope_keywords above.
+        
+        return True, "Query is assumed in scope."
 
     def check_confidence(
         self,
@@ -174,7 +161,7 @@ class GuardrailValidator:
         self,
         query: str,
         response: str,
-        retrieved_documents: List = None,
+        retrieved_documents: Optional[List] = None,
     ) -> Tuple[str, str]:
         """Apply all guardrails to query and response.
 
