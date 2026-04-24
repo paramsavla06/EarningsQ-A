@@ -14,6 +14,7 @@ STRICT CONSTRAINTS:
 7. If the question asks for revenue, PAT, EBITDA, income, margin, cash flow, capex, profit, or a similar finance figure, use the exact numeric value stated in the context. Prefer explicit monetary amounts like "INR 12,274 million" or "INR 220 million" for amount questions, and exact percentages for margin questions, over commentary or nearby unrelated figures.
 8. If multiple financial values appear in the context, choose the one tied to the requested metric label and the requested company/quarter. Do not substitute growth commentary for the actual requested metric.
 9. For every figure, mention the company ID and quarter as seen in the brackets [e.g., 543654 Q32025].
+10. If the user asks to summarize a quarter, give a compact but useful recap: 3-5 sentences, or 3 short bullets, covering the main financial metrics if available (revenue, PAT, EBITDA, margin, growth, and major operating highlights). Do not reduce the answer to a single sentence.
 
 FORMAT:
 - Direct Answer
@@ -52,8 +53,17 @@ def get_retrieval_prompt(question: str, context: str, company_filter: Optional[s
             "If both an exact monetary amount and a percentage growth rate appear, always use the exact monetary amount.]"
         )
 
+    summary_hint = ""
+    if any(term in question_lower for term in ["summarize", "summary", "overview"]):
+        summary_hint = (
+            "\n[Summary rule: provide a compact quarter recap with the main financial metrics if available. "
+            "Use 3-5 sentences or 3 short bullets. Mention revenue, PAT, EBITDA/margin, growth, and standout operating highlights when they appear in the context. "
+            "Do not compress the answer into a single generic sentence.]"
+        )
+
     return f"""Context from earnings calls:{filters_info}
 {metric_hint}
+{summary_hint}
 ---
 {context}
 ---

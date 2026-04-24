@@ -224,9 +224,26 @@ class EarningsQACLI:
         question_lower = question.lower()
         requested = []
         for metric_key, spec in cls._metric_specs().items():
+            if metric_key == "ebitda" and "margin" in question_lower:
+                continue
             if any(alias in question_lower for alias in spec["aliases"]):
                 requested.append(metric_key)
         return requested
+
+    @staticmethod
+    def _extract_mentioned_quarters(question: str) -> List[str]:
+        """Return quarters explicitly mentioned in the question, in order of appearance."""
+        quarters = []
+        for match in re.finditer(r"\bQ([1-4])\b", question, flags=re.IGNORECASE):
+            quarter = f"Q{match.group(1)}"
+            if quarter not in quarters:
+                quarters.append(quarter)
+        return quarters
+
+    @classmethod
+    def _has_mixed_quarter_request(cls, question: str) -> bool:
+        """Detect whether a question mentions more than one quarter."""
+        return len(cls._extract_mentioned_quarters(question)) > 1
 
     def _extract_metric_candidates(self, retrieved_docs, metric: str):
         """Return candidate metric values from retrieved transcript chunks.
@@ -339,7 +356,13 @@ class EarningsQACLI:
 
         return candidates
 
-    def _get_exact_lookup_documents(self, question: str, retrieved_docs):
+    def _get_exact_lookup_documents(
+        self,
+        question: str,
+        retrieved_docs,
+        company_filter: Optional[str] = None,
+        quarter_filter: Optional[str] = None,
+    ):
         """Prefer full company-quarter filtered docs for exact metric questions.
 
         Semantic top-k retrieval is useful for general questions, but exact revenue/PAT
@@ -349,8 +372,10 @@ class EarningsQACLI:
         if not self.retriever:
             return retrieved_docs, None, None
 
-        company_id = self.retriever._detect_company_intent(question)
-        quarter = self.retriever._detect_quarter_intent(question)
+        company_id = company_filter or self.retriever._detect_company_intent(
+            question)
+        quarter = quarter_filter or self.retriever._detect_quarter_intent(
+            question)
 
         if company_id or quarter:
             docs = self.retriever.retrieve_by_filters(
@@ -361,15 +386,31 @@ class EarningsQACLI:
 
         return retrieved_docs, None, None
 
-    def _try_direct_metric_answer(self, question: str, retrieved_docs) -> Optional[str]:
+    def _try_direct_metric_answer(
+        self,
+        question: str,
+        retrieved_docs,
+        company_filter: Optional[str] = None,
+        quarter_filter: Optional[str] = None,
+    ) -> Optional[str]:
         """Build a deterministic answer for exact revenue/PAT questions when the context contains them."""
         requested_metrics = self._detect_requested_metrics(question)
 
         if not requested_metrics or not retrieved_docs:
             return None
 
+        if self._has_mixed_quarter_request(question):
+            return (
+                "Direct Answer:\n"
+                "I can only answer one quarter at a time. Please ask a separate question for each quarter, or narrow the request to a single quarter."
+            )
+
         lookup_docs, detected_company_id, detected_quarter = self._get_exact_lookup_documents(
-            question, retrieved_docs)
+            question,
+            retrieved_docs,
+            company_filter=company_filter,
+            quarter_filter=quarter_filter,
+        )
         if lookup_docs:
             retrieved_docs = lookup_docs
 
@@ -404,6 +445,44 @@ class EarningsQACLI:
     def _is_exact_metric_question(question: str) -> bool:
         """Detect questions that ask for an exact financial metric."""
         return len(EarningsQACLI._detect_requested_metrics(question)) > 0
+
+    @staticmethod
+    def _filter_conflict_message(company_filter: Optional[str], quarter_filter: Optional[str]) -> str:
+        """Return a professional message for questions outside the active filters."""
+        scope_parts = []
+        if company_filter:
+            scope_parts.append(f"company {company_filter}")
+        if quarter_filter:
+            scope_parts.append(f"quarter {quarter_filter}")
+
+        scope_text = " and ".join(
+            scope_parts) if scope_parts else "the current transcript scope"
+        return (
+            "Direct Answer:\n"
+            f"I cannot answer that from the current filtered session because it is restricted to {scope_text}. "
+            "Please rerun `python main.py` without those filters, or start a new session with the company and quarter you want to query."
+        )
+
+    @staticmethod
+    def _is_outside_active_filters(
+        question: str,
+        company_filter: Optional[str],
+        quarter_filter: Optional[str],
+        retriever: Optional[Retriever],
+    ) -> bool:
+        """Detect whether the question explicitly targets a company or quarter outside the active filters."""
+        if not retriever:
+            return False
+
+        requested_company = retriever._detect_company_intent(question)
+        requested_quarter = retriever._detect_quarter_intent(question)
+
+        if company_filter and requested_company and requested_company != company_filter:
+            return True
+        if quarter_filter and requested_quarter and requested_quarter != quarter_filter:
+            return True
+
+        return False
 
     def _create_index(self) -> bool:
         """Create RAG index from transcripts.
@@ -487,6 +566,27 @@ class EarningsQACLI:
                 retrieved_docs = []
 
                 if self.indexed and self.retriever:
+                    if self._is_outside_active_filters(
+                        question=question,
+                        company_filter=company_filter,
+                        quarter_filter=quarter_filter,
+                        retriever=self.retriever,
+                    ):
+                        answer = self._filter_conflict_message(
+                            company_filter, quarter_filter)
+                        answer, guardrail_status = self.validator.apply_guardrails(
+                            query=question,
+                            response=answer,
+                            retrieved_documents=[],
+                        )
+                        click.echo(answer + "\n")
+
+                        self.conversation.add("user", question)
+                        self.conversation.add("assistant", answer)
+                        log_query(question, answer,
+                                  company_filter, quarter_filter)
+                        continue
+
                     retrieved_docs = self.retriever.retrieve(
                         question,
                         company_id=company_filter,
@@ -508,7 +608,11 @@ class EarningsQACLI:
                 click.echo("\nAssistant: ", nl=False)
 
                 direct_answer = self._try_direct_metric_answer(
-                    question, retrieved_docs)
+                    question,
+                    retrieved_docs,
+                    company_filter=company_filter,
+                    quarter_filter=quarter_filter,
+                )
                 if direct_answer:
                     answer = direct_answer
                     answer, guardrail_status = self.validator.apply_guardrails(
