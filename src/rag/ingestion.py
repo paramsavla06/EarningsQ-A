@@ -95,11 +95,13 @@ class TranscriptIngestionPipeline:
 
             year = int(date_str[:4])
             month = int(date_str[4:6])
+            
+            # Calculate Fiscal Year (FY)
+            # If month is April (4) or later, it belongs to the NEXT year's FY
+            # e.g., August 2024 belongs to FY 2025
+            fiscal_year = year + 1 if month >= 4 else year
 
-            # Determine quarter from month
-            quarter = f"Q{(month - 1) // 3 + 1}"
-
-            return company_id, quarter, year
+            return company_id, None, fiscal_year
         except Exception as e:
             logger.error(f"Error parsing filename {filename}: {e}")
             return None, None, None
@@ -183,14 +185,23 @@ class TranscriptIngestionPipeline:
                 text = self.extract_pdf_text(pdf_path)
 
                 if text:
-                    # Parse filename for metadata
-                    parsed_company, parsed_quarter, year = self.parse_filename(
-                        pdf_path.name)
+                    # Parse filename for basic metadata
+                    parsed_company, _, year = self.parse_filename(pdf_path.name)
 
                     if parsed_company and year:
+                        # Extract the actual quarter from the folder path (e.g. 'Q1', 'Q3')
+                        actual_quarter = None
+                        for part in pdf_path.parts:
+                            if part in ["Q1", "Q2", "Q3", "Q4"]:
+                                actual_quarter = part
+                                break
+                        
+                        if not actual_quarter:
+                            actual_quarter = "Unknown"
+
                         # Chunk the text
                         chunks = self.chunk_text(
-                            text, parsed_company, parsed_quarter, year)
+                            text, parsed_company, actual_quarter, year)
                         all_documents.extend(chunks)
 
         logger.info(f"Total ingested documents: {len(all_documents)}")

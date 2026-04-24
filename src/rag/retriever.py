@@ -30,13 +30,21 @@ class Retriever:
         query_lower = query.lower()
         mapping = {
             "532400": ["bsoft", "birlasoft", "532400"],
-            "542652": ["mankind", "pharma", "542652"],
+            "542652": ["polycab", "wires", "542652"],
             "543654": ["medanta", "global health", "543654"],
             "544350": ["agarwal", "544350"]
         }
         for cid, keywords in mapping.items():
             if any(k in query_lower for k in keywords):
                 return cid
+        return None
+
+    def _detect_quarter_intent(self, query: str) -> Optional[str]:
+        """Detect if the user is asking about a specific quarter."""
+        query_upper = query.upper()
+        for q in ["Q1", "Q2", "Q3", "Q4"]:
+            if q in query_upper:
+                return q
         return None
 
     def retrieve(
@@ -48,15 +56,21 @@ class Retriever:
     ) -> List[Tuple[Document, float]]:
         """Retrieve top-K documents with smart intent detection.
         """
+        query_lower = query.lower()
         if self.index is None:
             logger.warning("No index loaded")
             return []
 
-        # 1. Intent Detection: Did the user name a company in the text?
+        # 1. Intent Detection: Did the user name a company or quarter in the text?
         if not company_id:
             company_id = self._detect_company_intent(query)
             if company_id:
                 logger.info(f"Detected specific company intent: {company_id}")
+                
+        if not quarter:
+            quarter = self._detect_quarter_intent(query)
+            if quarter:
+                logger.info(f"Detected specific quarter intent: {quarter}")
 
         # 2. Embed query
         query_embedding = self.embedding_pipeline.embed_text(query)
@@ -66,6 +80,7 @@ class Retriever:
         search_k = max(100, top_k * 4)
         distances, indices = self.index.search(query_embedding, search_k)
 
+        # 4. Filter and Boost
         candidates = []
         for i, idx in enumerate(indices[0]):
             if idx < len(self.documents):
@@ -74,6 +89,27 @@ class Retriever:
                 
                 # With normalized vectors, Cosine Similarity = 1 - (squared_l2_dist / 2)
                 similarity = max(0.0, 1.0 - (dist_sq / 2.0))
+
+                # --- NEW: Keyword Boosting ---
+                # If chunk contains specific keywords the user asked for, boost its similarity
+                boost = 0.0
+                content_lower = doc.content.lower()
+                
+                # Check for financial metrics
+                if "revenue" in query_lower and ("revenue" in content_lower or "income" in content_lower):
+                    boost += 0.1
+                if "ebitda" in query_lower and "ebitda" in content_lower:
+                    boost += 0.1
+                
+                # CRITICAL: Prioritize 'Consolidated' + Hard Numbers
+                if "consolidated" in content_lower:
+                    boost += 0.1
+                    # Double boost if both 'consolidated' and numbers exist
+                    if "%" in content_lower or "₹" in content_lower or "rs" in content_lower:
+                        boost += 0.2
+                
+                similarity = min(0.99, similarity + boost)
+                # -----------------------------
 
                 if company_id and doc.company_id != company_id:
                     continue

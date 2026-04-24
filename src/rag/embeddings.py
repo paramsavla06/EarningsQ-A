@@ -64,7 +64,7 @@ class EmbeddingPipeline:
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/embeddings",
             json={"model": OLLAMA_EMBED_MODEL, "prompt": text},
-            timeout=60,
+            timeout=120,
         )
         response.raise_for_status()
         vals = response.json()["embedding"]
