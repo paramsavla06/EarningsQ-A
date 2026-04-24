@@ -401,8 +401,7 @@ class EarningsQACLI:
 
         if self._has_mixed_quarter_request(question):
             return (
-                "Direct Answer:\n"
-                "I can only answer one quarter at a time. Please ask a separate question for each quarter, or narrow the request to a single quarter."
+                "I can only answer for one quarter at a time. Please ask a separate question for each quarter, or narrow your request to a single quarter."
             )
 
         lookup_docs, detected_company_id, detected_quarter = self._get_exact_lookup_documents(
@@ -415,29 +414,52 @@ class EarningsQACLI:
             retrieved_docs = lookup_docs
 
         company_id = retrieved_docs[0][0].company_id
-        quarter_label = f"{retrieved_docs[0][0].quarter}{retrieved_docs[0][0].year}"
+        
+        company_mapping = {
+            "532400": "Birlasoft Limited",
+            "542652": "Polycab India",
+            "543654": "Medanta",
+            "544350": "Dr. Agarwal's Eye Hospital"
+        }
+        company_name = company_mapping.get(company_id, f"Company {company_id}")
 
-        lines = ["Direct Answer:"]
+        lines = []
 
         for metric_key in requested_metrics:
             candidates = self._extract_metric_candidates(
                 retrieved_docs, metric_key)
             if not candidates:
                 return (
-                    "Direct Answer:\n"
-                    f"I don't have reliable data on the exact {metric_key.replace('_', ' ')} for Company {company_id} in {quarter_label} from the provided transcripts."
+                    f"I couldn't find reliable data on the exact {metric_key.replace('_', ' ')} for {company_name} from the provided transcripts."
                 )
 
-            # Prefer the strongest semantic hit, then the earliest exact mention in the chunk.
-            metric_score, metric_value, metric_text, metric_doc, metric_similarity, metric_position = max(
-                candidates,
-                key=lambda item: (item[0], item[4], item[1], -item[5]),
-            )
-
             metric_display = self._metric_specs()[metric_key]["display"]
-            lines.append(
-                f"Company {company_id} reported {metric_display} of {metric_text} for {quarter_label} [{metric_doc.company_id} {metric_doc.quarter}{metric_doc.year} - Match: {metric_similarity:.2%}]."
-            )
+
+            if detected_quarter:
+                # If a specific quarter was asked for, just get the best candidate overall
+                metric_score, metric_value, metric_text, metric_doc, metric_similarity, metric_position = max(
+                    candidates,
+                    key=lambda item: (item[0], item[4], item[1], -item[5]),
+                )
+                q_label = f"{metric_doc.quarter} {metric_doc.year}"
+                lines.append(
+                    f"Based on the transcript, {company_name} reported a {metric_display} of {metric_text} for {q_label} [{metric_doc.company_id} {metric_doc.quarter}{metric_doc.year} - Match: {metric_similarity:.2%}]."
+                )
+            else:
+                # Group candidates by quarter and get the best one for EACH quarter
+                best_per_q = {}
+                for cand in candidates:
+                    q_key = f"{cand[3].quarter} {cand[3].year}"
+                    # cand[0] is metric_score. Keep the one with the highest score
+                    if q_key not in best_per_q or cand[0] > best_per_q[q_key][0]:
+                        best_per_q[q_key] = cand
+                
+                lines.append(f"Here is the {metric_display} for {company_name} across the available quarters:")
+                for q_key, cand in sorted(best_per_q.items()):
+                    metric_score, metric_value, metric_text, metric_doc, metric_similarity, metric_position = cand
+                    lines.append(
+                        f"• {q_key}: {metric_text} [{metric_doc.company_id} {metric_doc.quarter}{metric_doc.year} - Match: {metric_similarity:.2%}]"
+                    )
 
         return "\n".join(lines)
 
