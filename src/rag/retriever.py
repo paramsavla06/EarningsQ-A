@@ -64,13 +64,9 @@ class Retriever:
         # 1. Intent Detection: Did the user name a company or quarter in the text?
         if not company_id:
             company_id = self._detect_company_intent(query)
-            if company_id:
-                logger.info(f"Detected specific company intent: {company_id}")
-                
+
         if not quarter:
             quarter = self._detect_quarter_intent(query)
-            if quarter:
-                logger.info(f"Detected specific quarter intent: {quarter}")
 
         # 2. Embed query
         query_embedding = self.embedding_pipeline.embed_text(query)
@@ -78,7 +74,7 @@ class Retriever:
 
         # 3. Search
         search_k = max(100, top_k * 4)
-        distances, indices = self.index.search(query_embedding, search_k)
+        distances, indices = self.index.search(query_embedding, search_k)  # type: ignore[call-arg]
 
         # 4. Filter and Boost
         candidates = []
@@ -86,7 +82,7 @@ class Retriever:
             if idx < len(self.documents):
                 doc = self.documents[idx]
                 dist_sq = distances[0][i]
-                
+
                 # With normalized vectors, Cosine Similarity = 1 - (squared_l2_dist / 2)
                 similarity = max(0.0, 1.0 - (dist_sq / 2.0))
 
@@ -94,20 +90,23 @@ class Retriever:
                 # If chunk contains specific keywords the user asked for, boost its similarity
                 boost = 0.0
                 content_lower = doc.content.lower()
-                
+
                 # Check for financial metrics
                 if "revenue" in query_lower and ("revenue" in content_lower or "income" in content_lower):
                     boost += 0.1
                 if "ebitda" in query_lower and "ebitda" in content_lower:
                     boost += 0.1
-                
+                if "pat " in query_lower or "profit" in query_lower:
+                    if "pat " in content_lower or "profit" in content_lower:
+                        boost += 0.15
+
                 # CRITICAL: Prioritize 'Consolidated' + Hard Numbers
                 if "consolidated" in content_lower:
                     boost += 0.1
                     # Double boost if both 'consolidated' and numbers exist
                     if "%" in content_lower or "₹" in content_lower or "rs" in content_lower:
                         boost += 0.2
-                
+
                 similarity = min(0.99, similarity + boost)
                 # -----------------------------
 
@@ -122,7 +121,7 @@ class Retriever:
             return []
 
         # --- Decision: Focus vs Diversity ---
-        
+
         # If we have a specific company (via filter or intent), prioritize FOCUS
         if company_id:
             candidates.sort(key=lambda x: x[1], reverse=True)
@@ -146,7 +145,7 @@ class Retriever:
                 if d == best_match[0]:
                     seen_indices.add(i)
                     break
-        
+
         candidates.sort(key=lambda x: x[1], reverse=True)
         for i, (doc, sim) in enumerate(candidates):
             if len(final_results) >= top_k:
@@ -181,7 +180,7 @@ class Retriever:
                 continue
             results.append(doc)
 
-        logger.info(
+        logger.debug(
             f"Retrieved {len(results)} documents for filters: company={company_id}, quarter={quarter}")
 
         return results
