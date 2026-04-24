@@ -4,7 +4,7 @@ import logging
 import json
 import re
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from pathlib import Path
 
 import click
@@ -216,6 +216,11 @@ class EarningsQACLI:
                 "kind": "amount",
                 "display": "PBT",
             },
+            "arpob": {
+                "aliases": ["arpob", "average revenue per occupied bed"],
+                "kind": "amount",
+                "display": "ARPOB",
+            },
         }
 
     @classmethod
@@ -244,6 +249,97 @@ class EarningsQACLI:
     def _has_mixed_quarter_request(cls, question: str) -> bool:
         """Detect whether a question mentions more than one quarter."""
         return len(cls._extract_mentioned_quarters(question)) > 1
+
+    @staticmethod
+    def _has_multiple_company_request(question: str) -> bool:
+        """Detect whether a question explicitly mentions more than one company."""
+        company_names = [
+            "medanta", "global health",
+            "polycab",
+            "birlasoft",
+            "dr agarwal", "dr. agarwal", "agarwal eye",
+            "532400", "542652", "543654", "544350",
+        ]
+        q = question.lower()
+        found = [name for name in company_names if name in q]
+        # Deduplicate — "dr agarwal" and "dr. agarwal" count as the same company
+        unique_companies = set()
+        for name in found:
+            if name in ("dr agarwal", "dr. agarwal", "agarwal eye", "544350"):
+                unique_companies.add("agarwal")
+            elif name in ("medanta", "global health", "543654"):
+                unique_companies.add("medanta")
+            elif name in ("polycab", "542652"):
+                unique_companies.add("polycab")
+            elif name in ("birlasoft", "532400"):
+                unique_companies.add("birlasoft")
+        return len(unique_companies) > 1
+
+    @staticmethod
+    def _extract_scope_from_text(text: str) -> Tuple[Optional[str], Optional[str]]:
+        """Extract the most obvious company id and quarter from a text snippet."""
+        text_lower = text.lower()
+        company_mapping = {
+            "532400": ["bsoft", "birlasoft", "birla soft", "birla soft limited", "532400"],
+            "542652": ["polycab", "wires", "542652"],
+            "543654": ["medanta", "global health", "543654"],
+            "544350": ["agarwal", "544350"],
+        }
+
+        company_id = None
+        for cid, keywords in company_mapping.items():
+            if any(keyword in text_lower for keyword in keywords):
+                company_id = cid
+                break
+
+        quarter = None
+        match = re.search(r"\bQ([1-4])\b", text, flags=re.IGNORECASE)
+        if match:
+            quarter = f"Q{match.group(1)}"
+
+        return company_id, quarter
+
+    def _resolve_scope_from_history(self) -> Tuple[Optional[str], Optional[str]]:
+        """Resolve company and quarter from the recent conversation, if any."""
+        company_id = None
+        quarter = None
+
+        for message in reversed(self.conversation.history):
+            history_company, history_quarter = self._extract_scope_from_text(
+                message["content"])
+            if not company_id and history_company:
+                company_id = history_company
+            if not quarter and history_quarter:
+                quarter = history_quarter
+            if company_id and quarter:
+                break
+
+        return company_id, quarter
+
+    def _is_vague_growth_reason_question(self, question: str, conversation_context: str = "") -> bool:
+        """Detect growth/reason questions that do not name a company."""
+        q = question.lower()
+        growth_terms = ["why", "reason", "because", "grow", "growth",
+                        "grew", "increase", "increased", "decline", "declined"]
+        summary_terms = ["summarize", "summary", "overview", "recap"]
+        company_terms = [
+            "birlasoft", "bsoft", "medanta", "global health", "polycab", "wires",
+            "agarwal", "dr. agarwal", "dr agarwal", "543654", "542652", "532400", "544350"
+        ]
+
+        if any(term in q for term in summary_terms):
+            return False
+
+        if not any(term in q for term in growth_terms):
+            return False
+
+        if any(term in q for term in company_terms):
+            return False
+
+        if conversation_context and any(term in conversation_context.lower() for term in company_terms):
+            return False
+
+        return True
 
     def _extract_metric_candidates(self, retrieved_docs, metric: str):
         """Return candidate metric values from retrieved transcript chunks.
@@ -413,27 +509,23 @@ class EarningsQACLI:
         if lookup_docs:
             retrieved_docs = lookup_docs
 
-        company_id = retrieved_docs[0][0].company_id
-        
-        company_mapping = {
-            "532400": "Birlasoft Limited",
-            "542652": "Polycab India",
-            "543654": "Medanta",
-            "544350": "Dr. Agarwal's Eye Hospital"
-        }
-        company_name = company_mapping.get(company_id, f"Company {company_id}")
-
         lines = []
 
         for metric_key in requested_metrics:
             candidates = self._extract_metric_candidates(
                 retrieved_docs, metric_key)
             if not candidates:
-                return (
-                    f"I couldn't find reliable data on the exact {metric_key.replace('_', ' ')} for {company_name} from the provided transcripts."
-                )
+                # If we can't find it with Regex, stay silent and let the LLM handle it.
+                continue
 
             metric_display = self._metric_specs()[metric_key]["display"]
+
+            company_mapping = {
+                "532400": "Birlasoft Limited",
+                "542652": "Polycab India",
+                "543654": "Medanta",
+                "544350": "Dr. Agarwal's Eye Hospital"
+            }
 
             if detected_quarter:
                 # If a specific quarter was asked for, just get the best candidate overall
@@ -441,26 +533,42 @@ class EarningsQACLI:
                     candidates,
                     key=lambda item: (item[0], item[4], item[1], -item[5]),
                 )
+                company_name = company_mapping.get(
+                    metric_doc.company_id, f"Company {metric_doc.company_id}")
                 q_label = f"{metric_doc.quarter} {metric_doc.year}"
                 lines.append(
                     f"Based on the transcript, {company_name} reported a {metric_display} of {metric_text} for {q_label} [{metric_doc.company_id} {metric_doc.quarter}{metric_doc.year} - Match: {metric_similarity:.2%}]."
                 )
             else:
-                # Group candidates by quarter and get the best one for EACH quarter
-                best_per_q = {}
+                # Group candidates by (Company, Quarter) and get the best one for EACH pair
+                best_per_entity = {}
                 for cand in candidates:
-                    q_key = f"{cand[3].quarter} {cand[3].year}"
-                    # cand[0] is metric_score. Keep the one with the highest score
-                    if q_key not in best_per_q or cand[0] > best_per_q[q_key][0]:
-                        best_per_q[q_key] = cand
-                
-                lines.append(f"Here is the {metric_display} for {company_name} across the available quarters:")
-                for q_key, cand in sorted(best_per_q.items()):
+                    entity_key = (cand[3].company_id,
+                                  f"{cand[3].quarter} {cand[3].year}")
+                    if entity_key not in best_per_entity or cand[0] > best_per_entity[entity_key][0]:
+                        best_per_entity[entity_key] = cand
+
+                # Sort by company name for organized output
+                sorted_results = sorted(best_per_entity.values(), key=lambda x: (
+                    x[3].company_id, x[3].year, x[3].quarter))
+
+                current_company = None
+                for cand in sorted_results:
                     metric_score, metric_value, metric_text, metric_doc, metric_similarity, metric_position = cand
+                    company_name = company_mapping.get(
+                        metric_doc.company_id, f"Company {metric_doc.company_id}")
+
+                    if company_name != current_company:
+                        lines.append(f"\n{metric_display} for {company_name}:")
+                        current_company = company_name
+
                     lines.append(
-                        f"• {q_key}: {metric_text} [{metric_doc.company_id} {metric_doc.quarter}{metric_doc.year} - Match: {metric_similarity:.2%}]"
+                        f"• {metric_doc.quarter} {metric_doc.year}: {metric_text} [{metric_doc.company_id} {metric_doc.quarter}{metric_doc.year} - Match: {metric_similarity:.2%}]"
                     )
 
+        # Return None if no metrics were extracted, so the LLM can take over
+        if not lines:
+            return None
         return "\n".join(lines)
 
     @staticmethod
@@ -577,10 +685,42 @@ class EarningsQACLI:
                 if not question:
                     continue
 
+                conversation_context = self.conversation.get_context()
+                history_company_filter, history_quarter_filter = self._resolve_scope_from_history()
+
+                resolved_company_filter = company_filter or history_company_filter
+                resolved_quarter_filter = quarter_filter or history_quarter_filter
+
                 # Apply scope guardrail
-                in_scope, scope_msg = self.validator.check_scope(question)
+                in_scope, scope_msg = self.validator.check_scope(
+                    question,
+                    conversation_context=conversation_context,
+                )
                 if not in_scope:
                     click.echo(f"\nAssistant: {scope_msg}\n")
+                    continue
+
+                if self._is_vague_growth_reason_question(question, conversation_context=conversation_context):
+                    msg = (
+                        "Please specify the company and quarter for growth-related questions. "
+                        "For example: 'Why did Medanta revenue grow in Q2 FY2025?' or 'What drove Polycab's revenue in Q3?'"
+                    )
+                    click.echo(f"\nAssistant: {msg}\n")
+                    self.conversation.add("user", question)
+                    self.conversation.add("assistant", msg)
+                    log_query(question, msg, company_filter, quarter_filter)
+                    continue
+
+                # Detect multi-company questions early and redirect politely
+                if self._has_multiple_company_request(question):
+                    msg = (
+                        "I can only focus on one company at a time to give you accurate answers. "
+                        "Please ask about each company separately — for example: "
+                        "'How is Medanta doing in Q2?' and then 'What is Polycab's overall performance?'"
+                    )
+                    click.echo(f"\nAssistant: {msg}\n")
+                    self.conversation.add("user", question)
+                    self.conversation.add("assistant", msg)
                     continue
 
                 # Retrieve relevant context from RAG
@@ -600,6 +740,7 @@ class EarningsQACLI:
                             query=question,
                             response=answer,
                             retrieved_documents=[],
+                            conversation_context=conversation_context,
                         )
                         click.echo(answer + "\n")
 
@@ -611,8 +752,8 @@ class EarningsQACLI:
 
                     retrieved_docs = self.retriever.retrieve(
                         question,
-                        company_id=company_filter,
-                        quarter=quarter_filter,
+                        company_id=resolved_company_filter,
+                        quarter=resolved_quarter_filter,
                     )
                     if retrieved_docs:
                         context = self.retriever.format_context(retrieved_docs)
@@ -620,72 +761,91 @@ class EarningsQACLI:
                     click.echo(
                         "\n⚠️  RAG index not loaded. Run with --index first.\n")
 
-                user_message = get_retrieval_prompt(
-                    question=question,
-                    context=context or "No relevant context found in transcripts.",
-                    company_filter=company_filter or "",
-                    quarter_filter=quarter_filter or "",
-                )
-
                 click.echo("\nAssistant: ", nl=False)
 
                 direct_answer = self._try_direct_metric_answer(
                     question,
                     retrieved_docs,
-                    company_filter=company_filter,
-                    quarter_filter=quarter_filter,
+                    company_filter=resolved_company_filter,
+                    quarter_filter=resolved_quarter_filter,
                 )
+                final_answer = ""
+
                 if direct_answer:
-                    answer = direct_answer
-                    answer, guardrail_status = self.validator.apply_guardrails(
-                        query=question,
-                        response=answer,
-                        retrieved_documents=retrieved_docs,
-                    )
-                    click.echo(answer + "\n")
+                    # Print the exact mathematical figures immediately
+                    click.echo(direct_answer + "\n")
+                    final_answer += direct_answer + "\n\n"
 
+                # Determine if we need the LLM to fill in gaps or answer qualitative parts
+                # 1. Did the regex fail to find one of the requested metrics?
+                # 2. Does the question contain qualitative words (why, how, etc.)?
+                # 3. Was there no direct answer at all?
+
+                requested_metrics = self._detect_requested_metrics(question)
+                qualitative_keywords = ["why", "how", "comment", "summarize", "summary",
+                                        "overview", "plans", "strategy", "expansion", "growth", "compare"]
+
+                is_pure_metric_query = len(requested_metrics) > 0 and not any(
+                    word in question.lower() for word in qualitative_keywords)
+
+                # Count how many successful metric lines were produced
+                # Each successful metric match produces at least one line containing "Match:" or a bullet point
+                metrics_found_count = 0
+                if direct_answer:
+                    for metric in requested_metrics:
+                        spec = self._metric_specs().get(metric)
+                        if spec and spec["display"].lower() in direct_answer.lower():
+                            metrics_found_count += 1
+
+                regex_found_all = (metrics_found_count == len(
+                    requested_metrics)) and len(requested_metrics) > 0
+
+                if is_pure_metric_query and regex_found_all:
+                    # We have everything! No need to call the expensive/noisy LLM.
+                    answered_text = direct_answer or ""
                     self.conversation.add("user", question)
-                    self.conversation.add("assistant", answer)
-                    log_query(question, answer, company_filter, quarter_filter)
+                    self.conversation.add("assistant", answered_text.strip())
+                    log_query(question, answered_text.strip(),
+                              company_filter, quarter_filter)
                     continue
 
-                if self._is_exact_metric_question(question):
-                    safe_refusal = (
-                        "Direct Answer:\n"
-                        "I don't have reliable data on this from the provided transcripts."
-                    )
-                    answer = safe_refusal
-                    answer, guardrail_status = self.validator.apply_guardrails(
-                        query=question,
-                        response=answer,
-                        retrieved_documents=retrieved_docs,
-                    )
-                    click.echo(answer + "\n")
+                # If we're here, we need the LLM.
+                if direct_answer:
+                    # Add a separator to indicate the LLM is now answering the rest
+                    click.echo("--- Additional Context ---\n", nl=False)
 
-                    self.conversation.add("user", question)
-                    self.conversation.add("assistant", answer)
-                    log_query(question, answer, company_filter, quarter_filter)
-                    continue
+                # Call the LLM to cover anything not answered by Regex.
+                user_message = get_retrieval_prompt(
+                    question=question,
+                    context=context or "No relevant context found in transcripts.",
+                    company_filter=resolved_company_filter or "",
+                    quarter_filter=resolved_quarter_filter or "",
+                    conversation_context=conversation_context,
+                    already_extracted=direct_answer or "",
+                )
 
                 try:
-                    answer = self.llm.answer_question(
+                    llm_answer = self.llm.answer_question(
                         system_prompt=SYSTEM_PROMPT,
                         user_message=user_message,
                     )
 
                     # Apply guardrails
-                    answer, guardrail_status = self.validator.apply_guardrails(
+                    validated_answer, guardrail_status = self.validator.apply_guardrails(
                         query=question,
-                        response=answer,
+                        response=llm_answer,
                         retrieved_documents=retrieved_docs,
+                        conversation_context=conversation_context,
                     )
 
-                    click.echo(answer + "\n")
+                    click.echo(validated_answer + "\n")
+                    final_answer += validated_answer
 
                     # Log interaction
                     self.conversation.add("user", question)
-                    self.conversation.add("assistant", answer)
-                    log_query(question, answer, company_filter, quarter_filter)
+                    self.conversation.add("assistant", final_answer.strip())
+                    log_query(question, final_answer.strip(),
+                              resolved_company_filter, resolved_quarter_filter)
 
                 except Exception as e:
                     click.echo(f"Error calling LLM: {e}\n", err=True)

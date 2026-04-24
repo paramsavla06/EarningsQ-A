@@ -15,7 +15,17 @@ class GuardrailValidator:
         """Initialize guardrails validator."""
         self.llm = get_llm_client()
 
-    def check_scope(self, query: str) -> Tuple[bool, str]:
+    @staticmethod
+    def _has_company_marker(text: str) -> bool:
+        """Detect whether text names a known company or company id."""
+        text_lower = text.lower()
+        company_markers = [
+            "birlasoft", "bsoft", "medanta", "global health", "polycab", "wires",
+            "agarwal", "dr. agarwal", "dr agarwal", "543654", "542652", "532400", "544350"
+        ]
+        return any(marker in text_lower for marker in company_markers)
+
+    def check_scope(self, query: str, conversation_context: Optional[str] = None) -> Tuple[bool, str]:
         """Check if query is in scope (about earnings calls).
 
         Args:
@@ -40,7 +50,7 @@ class GuardrailValidator:
             "symptom", "diagnosis", "treatment for", "medicine for", "cure for",
             "doctor recommendation", "surgery advice", "pain in my", "health advice",
             # Casual Chatter / Greetings
-            "how are you", "how is your day", "how's your day", "good morning", 
+            "how are you", "how is your day", "how's your day", "good morning",
             "good afternoon", "good evening", "what's up", "hello there"
         ]
 
@@ -54,10 +64,21 @@ class GuardrailValidator:
                     "Please ask me a question about revenue, market trends, business strategy, or a specific company's latest quarter!"
                 )
 
-        # Instead of strictly requiring a financial keyword to be present (which blocks 
-        # qualitative questions like "What are your AI plans?"), we will default to 
+        vague_growth_keywords = ["why", "reason", "because", "grow",
+                                 "growth", "grew", "increase", "increased", "decline", "declined"]
+        has_vague_growth_intent = any(
+            keyword in query_lower for keyword in vague_growth_keywords)
+        has_company_marker = self._has_company_marker(query)
+        has_history_marker = bool(conversation_context and self._has_company_marker(conversation_context))
+
+        if has_vague_growth_intent and not (has_company_marker or has_history_marker):
+            return False, (
+                "Please name the company and quarter for growth-related questions. For example: 'Why did Medanta revenue grow in Q2 FY2025?' or 'What drove Polycab's revenue in Q3?'")
+
+        # Instead of strictly requiring a financial keyword to be present (which blocks
+        # qualitative questions like "What are your AI plans?"), we will default to
         # allowing the query as long as it didn't trigger any out_of_scope_keywords above.
-        
+
         return True, "Query is assumed in scope."
 
     def check_confidence(
@@ -72,27 +93,28 @@ class GuardrailValidator:
 
         # 1. Get raw similarities
         similarities = [sim for _, sim in retrieved_documents]
-        
+
         # 2. Extract unique companies (diversity factor)
-        unique_companies = len(set(doc.company_id for doc, _ in retrieved_documents))
-        
+        unique_companies = len(
+            set(doc.company_id for doc, _ in retrieved_documents))
+
         # 3. Calculate metrics
         # max_similarity tells us if we found at least one "correct" anchor
         max_sim = max(similarities)
         avg_sim = sum(similarities) / len(similarities)
-        
+
         # 4. Normalized score calculation
         # Local embeddings (Ollama) often have lower raw similarity scores (e.g., 0.1 - 0.3)
         # We boost the score if we found one strong anchor OR multiple companies.
-        
+
         # Base confidence on the best available match (Max Similarity)
         # 0.7+ is usually a direct semantic match
         confidence_score = max_sim
-        
+
         # Small diversity bonus (max +5% if we have multiple companies)
         if unique_companies > 1:
             confidence_score += 0.05
-            
+
         confidence_score = min(0.99, confidence_score)
 
         # Confidence levels (Standard industry thresholds)
@@ -162,6 +184,7 @@ class GuardrailValidator:
         query: str,
         response: str,
         retrieved_documents: Optional[List] = None,
+        conversation_context: Optional[str] = None,
     ) -> Tuple[str, str]:
         """Apply all guardrails to query and response.
 
@@ -174,7 +197,10 @@ class GuardrailValidator:
             Tuple of (final_response, status_message)
         """
         # Check scope
-        in_scope, scope_msg = self.check_scope(query)
+        in_scope, scope_msg = self.check_scope(
+            query,
+            conversation_context=conversation_context,
+        )
         if not in_scope:
             return scope_msg, "OUT_OF_SCOPE"
 

@@ -29,7 +29,7 @@ class Retriever:
         """Detect if the user is asking about a specific company by name."""
         query_lower = query.lower()
         mapping = {
-            "532400": ["bsoft", "birlasoft", "532400"],
+            "532400": ["bsoft", "birlasoft", "birla soft", "birla soft limited", "532400"],
             "542652": ["polycab", "wires", "542652"],
             "543654": ["medanta", "global health", "543654"],
             "544350": ["agarwal", "544350"]
@@ -74,7 +74,8 @@ class Retriever:
 
         # 3. Search
         search_k = max(100, top_k * 4)
-        distances, indices = self.index.search(query_embedding, search_k)  # type: ignore[call-arg]
+        distances, indices = self.index.search(
+            query_embedding, search_k)  # type: ignore[call-arg]
 
         # 4. Filter and Boost
         candidates = []

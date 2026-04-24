@@ -15,10 +15,12 @@ STRICT CONSTRAINTS:
 8. If multiple financial values appear in the context, choose the one tied to the requested metric label and the requested company/quarter. Do not substitute growth commentary for the actual requested metric.
 9. For every figure, mention the company ID and quarter as seen in the brackets [e.g., 543654 Q32025].
 10. If the user asks to summarize a quarter, give a compact but useful recap: 3-5 sentences, or 3 short bullets, covering the main financial metrics if available (revenue, PAT, EBITDA, margin, growth, and major operating highlights). Do not reduce the answer to a single sentence.
+11. CRITICAL: If the user's message already contains exact figures (e.g., in the [ALREADY ANSWERED] block), do NOT repeat or contradict those figures. However, you MUST still provide the full qualitative analysis (reasons for growth, "why" it happened, management commentary) for those metrics. The [ALREADY ANSWERED] block handles the "What", but you are still responsible for the "Why" and any metrics the regex missed (like ARPOB).
+12. If the user asks a vague growth/reason question without naming a company or quarter, do not guess which company they mean unless the recent conversation context clearly identifies it. Otherwise, ask them to specify the company and quarter first.
 """
 
 
-def get_retrieval_prompt(question: str, context: str, company_filter: Optional[str] = None, quarter_filter: Optional[str] = None) -> str:
+def get_retrieval_prompt(question: str, context: str, company_filter: Optional[str] = None, quarter_filter: Optional[str] = None, conversation_context: Optional[str] = None, already_extracted: Optional[str] = None) -> str:
     """Generate user prompt for LLM with retrieved context.
 
     Args:
@@ -26,6 +28,7 @@ def get_retrieval_prompt(question: str, context: str, company_filter: Optional[s
         context: Retrieved relevant excerpts from transcripts
         company_filter: Optional company filter applied
         quarter_filter: Optional quarter filter applied
+        already_extracted: Deterministically extracted answers already shown to the user
 
     Returns:
         Formatted user prompt
@@ -43,9 +46,8 @@ def get_retrieval_prompt(question: str, context: str, company_filter: Optional[s
     question_lower = question.lower()
     if any(term in question_lower for term in ["revenue", "pat", "ebitda", "profit", "margin", "income", "cash flow", "capex"]):
         metric_hint = (
-            "\n[Metric handling rule: answer with the exact figure from the context. "
-            "Do not substitute growth percentages, margins, or commentary when the user asks for a direct financial number. "
-            "If both an exact monetary amount and a percentage growth rate appear, always use the exact monetary amount.]"
+            "\n[Metric handling rule: Always provide the exact numeric figure from the context for the requested amount. "
+            "However, you MUST also include the qualitative reasons for growth, management commentary, and business drivers mentioned in the context to explain the 'Why' behind the numbers.]"
         )
 
     summary_hint = ""
@@ -56,9 +58,23 @@ def get_retrieval_prompt(question: str, context: str, company_filter: Optional[s
             "Do not compress the answer into a single generic sentence.]"
         )
 
+    extracted_note = ""
+    if already_extracted:
+        extracted_note = (
+            f"\n[ALREADY ANSWERED: The following metrics were already extracted with certainty — "
+            f"do NOT repeat or contradict them. Only answer the parts of the question not covered below:\n"
+            f"{already_extracted}\n]"
+        )
+
+    history_block = ""
+    if conversation_context:
+        history_block = f"\n[Recent conversation context:\n{conversation_context}\n]"
+
     return f"""Context from earnings calls:{filters_info}
 {metric_hint}
 {summary_hint}
+{history_block}
+{extracted_note}
 ---
 {context}
 ---
