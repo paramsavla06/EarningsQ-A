@@ -13,9 +13,11 @@ def make_doc(content: str, company_id: str = "c1", quarter: str = "Q1", year: st
 def test_ingestion_chunk_text():
     """TranscriptIngestionPipeline.chunk_text produces documents with correct metadata."""
     pipeline = TranscriptIngestionPipeline()
-    text = "Revenue was INR 100 million. " * 20  # long enough to create at least 1 chunk
+    # long enough to create at least 1 chunk
+    text = "Revenue was INR 100 million. " * 20
 
-    docs = pipeline.chunk_text(text, company_id="543654", quarter="Q1", year="FY24")
+    docs = pipeline.chunk_text(
+        text, company_id="543654", quarter="Q1", year="FY24")
 
     assert len(docs) > 0
     doc = docs[0]
@@ -39,8 +41,10 @@ def test_embedding_pipeline_build_index():
     pipeline = EmbeddingPipeline()
 
     docs = [
-        make_doc("Test document one",  company_id="c1", quarter="Q1", year="FY24"),
-        make_doc("Test document two",  company_id="c2", quarter="Q2", year="FY24"),
+        make_doc("Test document one",  company_id="c1",
+                 quarter="Q1", year="FY24"),
+        make_doc("Test document two",  company_id="c2",
+                 quarter="Q2", year="FY24"),
     ]
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -56,7 +60,8 @@ def test_embedding_pipeline_build_index():
 def test_embedding_pipeline_save_and_load():
     """Index saved to disk can be loaded and queried again."""
     pipeline = EmbeddingPipeline()
-    docs = [make_doc("Earnings were strong this quarter.", company_id="c1", quarter="Q1", year="FY24")]
+    docs = [make_doc("Earnings were strong this quarter.",
+                     company_id="c1", quarter="Q1", year="FY24")]
 
     with tempfile.TemporaryDirectory() as tmp:
         out_path = Path(tmp)

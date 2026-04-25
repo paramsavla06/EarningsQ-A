@@ -8,6 +8,7 @@ from earnings_qa.config import WORKSPACE_ROOT
 
 CACHE_DIR = WORKSPACE_ROOT / ".earnings_qa_cache"
 
+
 class CacheManager:
     """Manages persistent caching for embeddings, retrieval, and final answers."""
 
@@ -17,9 +18,9 @@ class CacheManager:
         self.embeddings_cache_file = self.cache_dir / "embeddings.pkl"
         self.retrieval_cache_file = self.cache_dir / "retrieval.pkl"
         self.answers_cache_file = self.cache_dir / "answers.pkl"
-        
+
         self._lock = threading.Lock()
-        
+
         self.embeddings = self._load(self.embeddings_cache_file)
         self.retrieval = self._load(self.retrieval_cache_file)
         self.answers = self._load(self.answers_cache_file)
@@ -76,6 +77,7 @@ class CacheManager:
         self._save(self.embeddings_cache_file, self.embeddings)
         self._save(self.retrieval_cache_file, self.retrieval)
         self._save(self.answers_cache_file, self.answers)
+
 
 # Global singleton
 cache = CacheManager()

@@ -96,7 +96,7 @@ class TranscriptIngestionPipeline:
 
             year = int(date_str[:4])
             month = int(date_str[4:6])
-            
+
             # Calculate Fiscal Year (FY)
             # If month is April (4) or later, it belongs to the NEXT year's FY
             # e.g., August 2024 belongs to FY 2025
@@ -179,13 +179,13 @@ class TranscriptIngestionPipeline:
             quarter = entry.get("quarter")
             fiscal_year = entry.get("fiscal_year")
             source_file_path = entry.get("source_file_path")
-            
+
             if not all([company_id, quarter, fiscal_year, source_file_path]):
                 logger.warning(f"Incomplete manifest entry: {entry}")
                 continue
-                
+
             pdf_path = data_dir / source_file_path
-            
+
             if not pdf_path.exists():
                 logger.warning(f"PDF not found: {pdf_path}")
                 continue
@@ -194,7 +194,8 @@ class TranscriptIngestionPipeline:
             text = self.extract_pdf_text(pdf_path)
 
             if text:
-                chunks = self.chunk_text(text, company_id, quarter, fiscal_year)
+                chunks = self.chunk_text(
+                    text, company_id, quarter, fiscal_year)
                 all_documents.extend(chunks)
 
         logger.info(f"Total ingested documents: {len(all_documents)}")

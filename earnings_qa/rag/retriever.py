@@ -55,7 +55,7 @@ class Retriever(RetrieverBackend):
         """Retrieve top-K documents with smart intent detection.
         """
         from earnings_qa.core.cache import cache
-        
+
         query_lower = query.lower()
         if self.index is None:
             logger.warning("No index loaded")
@@ -69,12 +69,14 @@ class Retriever(RetrieverBackend):
             quarters = self._detect_quarter_intents(query)
 
         # Check cache
-        index_version = getattr(self.embedding_pipeline, 'metadata', {}).get("manifest_hash", "unknown")
-        
+        index_version = getattr(self.embedding_pipeline, 'metadata', {}).get(
+            "manifest_hash", "unknown")
+
         c_filter = tuple(sorted(company_ids)) if company_ids else None
         q_filter = tuple(sorted(quarters)) if quarters else None
-        
-        cached = cache.get_retrieval(query_lower, str(c_filter), str(q_filter), index_version)
+
+        cached = cache.get_retrieval(query_lower, str(
+            c_filter), str(q_filter), index_version)
         if cached is not None:
             return cached
 
@@ -129,7 +131,8 @@ class Retriever(RetrieverBackend):
                 candidates.append((doc, similarity))
 
         if not candidates:
-            cache.set_retrieval(query_lower, str(c_filter), str(q_filter), index_version, [])
+            cache.set_retrieval(query_lower, str(c_filter),
+                                str(q_filter), index_version, [])
             return []
 
         # --- Decision: Focus vs Diversity ---
@@ -138,7 +141,8 @@ class Retriever(RetrieverBackend):
         if company_ids and len(company_ids) == 1:
             candidates.sort(key=lambda x: x[1], reverse=True)
             res = candidates[:top_k]
-            cache.set_retrieval(query_lower, str(c_filter), str(q_filter), index_version, res)
+            cache.set_retrieval(query_lower, str(c_filter),
+                                str(q_filter), index_version, res)
             return res
 
         # Otherwise, use Diversity Logic for generic queries
@@ -169,7 +173,8 @@ class Retriever(RetrieverBackend):
                 seen_indices.add(i)
 
         final_results.sort(key=lambda x: x[1], reverse=True)
-        cache.set_retrieval(query_lower, str(c_filter), str(q_filter), index_version, final_results)
+        cache.set_retrieval(query_lower, str(c_filter), str(
+            q_filter), index_version, final_results)
         return final_results
 
     async def retrieve_async(

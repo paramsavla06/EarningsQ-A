@@ -69,7 +69,8 @@ class GuardrailValidator:
         has_vague_growth_intent = any(
             keyword in query_lower for keyword in vague_growth_keywords)
         has_company_marker = self._has_company_marker(query)
-        has_history_marker = bool(conversation_context and self._has_company_marker(conversation_context))
+        has_history_marker = bool(
+            conversation_context and self._has_company_marker(conversation_context))
 
         if has_vague_growth_intent and not (has_company_marker or has_history_marker):
             return False, (

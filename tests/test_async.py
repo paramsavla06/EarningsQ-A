@@ -24,14 +24,16 @@ def _build_retriever(docs):
 
 def test_mock_llm_answer_question_sync():
     client = MockLLMClient()
-    response = client.answer_question("You are helpful.", "What is the revenue?")
+    response = client.answer_question(
+        "You are helpful.", "What is the revenue?")
     assert "revenue" in response.lower() or "MOCK" in response
 
 
 def test_mock_llm_answer_question_async():
     client = MockLLMClient()
     response = asyncio.run(
-        client.answer_question_async("You are helpful.", "What is the revenue?")
+        client.answer_question_async(
+            "You are helpful.", "What is the revenue?")
     )
     assert "revenue" in response.lower() or "MOCK" in response
 
@@ -39,7 +41,8 @@ def test_mock_llm_answer_question_async():
 # ── Retriever async ────────────────────────────────────────────────────────────
 
 def test_retriever_retrieve_sync():
-    docs = [make_doc("Revenue in Q1 was strong.", company_id="c1", quarter="Q1")]
+    docs = [make_doc("Revenue in Q1 was strong.",
+                     company_id="c1", quarter="Q1")]
     retriever = _build_retriever(docs)
     results = retriever.retrieve("revenue", top_k=1)
     assert isinstance(results, list)
@@ -59,7 +62,8 @@ def test_retriever_retrieve_by_filters_async():
     ]
     retriever = _build_retriever(docs)
     filtered = asyncio.run(
-        retriever.retrieve_by_filters_async(company_ids=["c1"], quarters=["Q1"])
+        retriever.retrieve_by_filters_async(
+            company_ids=["c1"], quarters=["Q1"])
     )
     assert all(d.quarter == "Q1" for d in filtered)
     assert len(filtered) == 1

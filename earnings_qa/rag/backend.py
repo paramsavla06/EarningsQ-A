@@ -3,6 +3,7 @@ from typing import List, Tuple, Optional
 from earnings_qa.rag.ingestion import Document
 from earnings_qa.config import TOP_K_RETRIEVAL
 
+
 class RetrieverBackend(ABC):
     """Abstract interface for document retrieval backends."""
 

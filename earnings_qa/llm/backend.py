@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from earnings_qa.config import LLM_MAX_TOKENS
 
+
 class LLMBackend(ABC):
     """Abstract interface for LLM generation backends."""
 

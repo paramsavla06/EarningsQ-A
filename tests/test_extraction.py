@@ -31,7 +31,8 @@ def test_extract_mentioned_quarters():
 def test_extract_scope_from_text_quarter_only():
     """Quarter should be parsed from text even if company is unknown."""
     service = ChatService()
-    _, quarter = service._extract_scope_from_text("In Q3, the revenue was good.")
+    _, quarter = service._extract_scope_from_text(
+        "In Q3, the revenue was good.")
     assert quarter == "Q3"
 
 
@@ -42,7 +43,8 @@ def test_try_direct_metric_answer_inr_amount():
         "Our revenue came in at INR 1,234 million.",
         company_id="test_co", quarter="Q1", year="FY24"
     )
-    answer = service._try_direct_metric_answer("What is the revenue?", [(doc, 0.9)])
+    answer = service._try_direct_metric_answer(
+        "What is the revenue?", [(doc, 0.9)])
 
     assert answer is not None
     assert "1,234" in answer
@@ -53,13 +55,15 @@ def test_try_direct_metric_answer_no_match():
     """Returns None when no metric is found in the docs."""
     service = ChatService()
     doc = make_doc("The management discussed strategic plans for growth.")
-    answer = service._try_direct_metric_answer("What is the revenue?", [(doc, 0.8)])
+    answer = service._try_direct_metric_answer(
+        "What is the revenue?", [(doc, 0.8)])
     assert answer is None
 
 
 def test_is_vague_growth_reason_question_true():
     service = ChatService()
-    assert service._is_vague_growth_reason_question("Why did revenue grow?") is True
+    assert service._is_vague_growth_reason_question(
+        "Why did revenue grow?") is True
 
 
 def test_is_vague_growth_reason_question_false_with_company():
@@ -67,4 +71,5 @@ def test_is_vague_growth_reason_question_false_with_company():
     service = ChatService()
     # Use a generic company term that definitely exists in any catalog
     # We check the negative: summary questions are never 'vague'
-    assert service._is_vague_growth_reason_question("Summarize the quarter") is False
+    assert service._is_vague_growth_reason_question(
+        "Summarize the quarter") is False
