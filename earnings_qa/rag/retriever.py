@@ -4,10 +4,10 @@ import logging
 import numpy as np
 from typing import List, Optional, Tuple
 
-from src.rag.ingestion import Document
-from src.rag.embeddings import EmbeddingPipeline
-from src.rag.backend import RetrieverBackend
-from src.config import TOP_K_RETRIEVAL, get_company_mapping
+from earnings_qa.rag.ingestion import Document
+from earnings_qa.rag.embeddings import EmbeddingPipeline
+from earnings_qa.rag.backend import RetrieverBackend
+from earnings_qa.config import TOP_K_RETRIEVAL, get_company_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,8 @@ class Retriever(RetrieverBackend):
     ) -> List[Tuple[Document, float]]:
         """Retrieve top-K documents with smart intent detection.
         """
+        from earnings_qa.core.cache import cache
+        
         query_lower = query.lower()
         if self.index is None:
             logger.warning("No index loaded")
@@ -65,6 +67,16 @@ class Retriever(RetrieverBackend):
 
         if not quarters:
             quarters = self._detect_quarter_intents(query)
+
+        # Check cache
+        index_version = getattr(self.embedding_pipeline, 'metadata', {}).get("manifest_hash", "unknown")
+        
+        c_filter = tuple(sorted(company_ids)) if company_ids else None
+        q_filter = tuple(sorted(quarters)) if quarters else None
+        
+        cached = cache.get_retrieval(query_lower, str(c_filter), str(q_filter), index_version)
+        if cached is not None:
+            return cached
 
         # 2. Embed query
         query_embedding = self.embedding_pipeline.embed_text(query)
@@ -117,6 +129,7 @@ class Retriever(RetrieverBackend):
                 candidates.append((doc, similarity))
 
         if not candidates:
+            cache.set_retrieval(query_lower, str(c_filter), str(q_filter), index_version, [])
             return []
 
         # --- Decision: Focus vs Diversity ---
@@ -124,7 +137,9 @@ class Retriever(RetrieverBackend):
         # If we have a specific company (via filter or intent), prioritize FOCUS
         if company_ids and len(company_ids) == 1:
             candidates.sort(key=lambda x: x[1], reverse=True)
-            return candidates[:top_k]
+            res = candidates[:top_k]
+            cache.set_retrieval(query_lower, str(c_filter), str(q_filter), index_version, res)
+            return res
 
         # Otherwise, use Diversity Logic for generic queries
         by_company = {}
@@ -154,6 +169,7 @@ class Retriever(RetrieverBackend):
                 seen_indices.add(i)
 
         final_results.sort(key=lambda x: x[1], reverse=True)
+        cache.set_retrieval(query_lower, str(c_filter), str(q_filter), index_version, final_results)
         return final_results
 
     def retrieve_by_filters(

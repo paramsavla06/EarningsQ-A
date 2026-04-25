@@ -6,11 +6,12 @@ from typing import Optional, List, Tuple
 from pathlib import Path
 from dataclasses import dataclass
 
-from src.config import LOGS_DIR, MAX_CONVERSATION_HISTORY
-from src.llm import get_llm_client
-from src.llm.prompts import SYSTEM_PROMPT, get_retrieval_prompt
-from src.rag.backend import RetrieverBackend
-from src.guardrails import GuardrailValidator
+from earnings_qa.config import LOGS_DIR, MAX_CONVERSATION_HISTORY
+from earnings_qa.llm import get_llm_client
+from earnings_qa.llm.prompts import SYSTEM_PROMPT, get_retrieval_prompt, PROMPT_VERSION
+from earnings_qa.rag.backend import RetrieverBackend
+from earnings_qa.guardrails import GuardrailValidator
+from earnings_qa.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +206,7 @@ class ChatService:
     @staticmethod
     def _extract_scope_from_text(text: str) -> Tuple[Optional[str], Optional[str]]:
         """Extract the most obvious company id and quarter from a text snippet."""
-        from src.config import get_company_mapping
+        from earnings_qa.config import get_company_mapping
         text_lower = text.lower()
         company_mapping = get_company_mapping()
 
@@ -245,7 +246,7 @@ class ChatService:
         growth_terms = ["why", "reason", "because", "grow", "growth",
                         "grew", "increase", "increased", "decline", "declined"]
         summary_terms = ["summarize", "summary", "overview", "recap"]
-        from src.config import get_all_company_aliases
+        from earnings_qa.config import get_all_company_aliases
         company_terms = get_all_company_aliases()
 
         if any(term in q for term in summary_terms):
@@ -424,7 +425,7 @@ class ChatService:
 
             metric_display = self._metric_specs()[metric_key]["display"]
 
-            from src.config import get_company_names
+            from earnings_qa.config import get_company_names
             company_mapping = get_company_names()
 
             best_per_entity = {}
@@ -526,6 +527,28 @@ class ChatService:
             log_query(question, msg, company_filter, quarter_filter)
             return ChatResponse(error_msg=msg)
 
+        # Check Cache
+        index_version = "unknown"
+        if self.indexed and hasattr(self.retriever, 'embedding_pipeline'):
+            index_version = getattr(self.retriever.embedding_pipeline, 'metadata', {}).get("manifest_hash", "unknown")
+            
+        history_hash = cache._hash(conversation_context)
+        c_filter = str(resolved_company_filter)
+        q_filter = str(resolved_quarter_filter)
+        
+        cached_answer = cache.get_answer(question.lower(), c_filter, q_filter, index_version, PROMPT_VERSION, history_hash)
+        if cached_answer is not None:
+            logger.info("ChatService: Serving cached answer.")
+            final_ans = ""
+            if cached_answer.get("direct_answer"):
+                final_ans += cached_answer["direct_answer"] + "\n\n"
+            if cached_answer.get("llm_answer"):
+                final_ans += cached_answer["llm_answer"]
+            
+            self.conversation.add("user", question)
+            self.conversation.add("assistant", final_ans.strip())
+            return ChatResponse(direct_answer=cached_answer.get("direct_answer"), llm_answer=cached_answer.get("llm_answer"))
+
         # Retrieve relevant context from RAG
         context = ""
         retrieved_docs = []
@@ -607,5 +630,10 @@ class ChatService:
         except Exception as e:
             logger.error(f"LLM error: {e}")
             return ChatResponse(direct_answer=direct_answer, error_msg=f"Error calling LLM: {e}")
+
+        cache.set_answer(
+            question.lower(), c_filter, q_filter, index_version, PROMPT_VERSION, history_hash,
+            {"direct_answer": direct_answer, "llm_answer": llm_answer}
+        )
 
         return ChatResponse(direct_answer=direct_answer, llm_answer=llm_answer)

@@ -15,11 +15,11 @@ try:
 except ImportError:
     import genai
 
-from src.config import (
+from earnings_qa.config import (
     GEMINI_API_KEY, LLM_MODEL, LLM_TEMPERATURE, LLM_MAX_TOKENS, USE_MOCK_LLM,
     USE_OLLAMA_LLM, OLLAMA_BASE_URL, OLLAMA_LLM_MODEL,
 )
-from src.llm.backend import LLMBackend
+from earnings_qa.llm.backend import LLMBackend
 
 # Force the SDK to use our configured key.
 # The google-genai SDK prefers GOOGLE_API_KEY over an explicitly passed api_key

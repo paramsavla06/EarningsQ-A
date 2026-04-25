@@ -8,18 +8,21 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Paths
-PROJECT_ROOT = Path(__file__).parent.parent
-WORKSPACE_ROOT = PROJECT_ROOT.parent  # Parent of earnings-qa
-DATA_DIR = WORKSPACE_ROOT / "files"  # Points to ../files (dataset folder)
-LOGS_DIR = PROJECT_ROOT / "logs"
+# Package Root
+PACKAGE_ROOT = Path(__file__).parent
+
+# Workspace and Data Directories (Configurable)
+WORKSPACE_ROOT = Path(os.getenv("EARNINGS_QA_WORKSPACE", Path.cwd()))
+DATA_DIR = Path(os.getenv("EARNINGS_QA_DATA_DIR", WORKSPACE_ROOT.parent / "files"))
+LOGS_DIR = Path(os.getenv("EARNINGS_QA_LOGS_DIR", WORKSPACE_ROOT / "logs"))
 
 # Ensure directories exist
-LOGS_DIR.mkdir(exist_ok=True)
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Load Company Catalog
 def _load_company_catalog():
-    catalog_path = PROJECT_ROOT / "config" / "company_catalog.json"
+    # Use bundled config by default, or allow override
+    catalog_path = Path(os.getenv("EARNINGS_QA_CATALOG_PATH", PACKAGE_ROOT / "config" / "company_catalog.json"))
     if catalog_path.exists():
         with open(catalog_path, "r", encoding="utf-8") as f:
             data = json.load(f)

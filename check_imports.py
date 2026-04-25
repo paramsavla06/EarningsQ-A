@@ -14,42 +14,42 @@ def check_imports():
     print("Checking imports...")
 
     try:
-        from src.config import USE_MOCK_LLM, DATA_DIR
+        from earnings_qa.config import USE_MOCK_LLM, DATA_DIR
         print("✓ src.config")
     except Exception as e:
         print(f"✗ src.config: {e}")
         return False
 
     try:
-        from src.llm import get_llm_client, LLMClient, MockLLMClient
+        from earnings_qa.llm import get_llm_client, LLMClient, MockLLMClient
         print("✓ src.llm")
     except Exception as e:
         print(f"✗ src.llm: {e}")
         return False
 
     try:
-        from src.llm.prompts import SYSTEM_PROMPT, get_retrieval_prompt
+        from earnings_qa.llm.prompts import SYSTEM_PROMPT, get_retrieval_prompt
         print("✓ src.llm.prompts")
     except Exception as e:
         print(f"✗ src.llm.prompts: {e}")
         return False
 
     try:
-        from src.rag import TranscriptIngestionPipeline, Document, EmbeddingPipeline, Retriever
+        from earnings_qa.rag import TranscriptIngestionPipeline, Document, EmbeddingPipeline, Retriever
         print("✓ src.rag")
     except Exception as e:
         print(f"✗ src.rag: {e}")
         return False
 
     try:
-        from src.guardrails import GuardrailValidator
+        from earnings_qa.guardrails import GuardrailValidator
         print("✓ src.guardrails")
     except Exception as e:
         print(f"✗ src.guardrails: {e}")
         return False
 
     try:
-        from src.cli import EarningsQACLI, main
+        from earnings_qa.cli import EarningsQACLI, main
         print("✓ src.cli")
     except Exception as e:
         print(f"✗ src.cli: {e}")

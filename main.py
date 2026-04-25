@@ -1,7 +1,7 @@
 """Main entrypoint for earnings QA application."""
 
 import sys
-from src.cli import main
+from earnings_qa.cli import main
 
 if __name__ == "__main__":
     main()

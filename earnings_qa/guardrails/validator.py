@@ -3,8 +3,8 @@
 import logging
 from typing import Tuple, List, Optional
 
-from src.llm import get_llm_client
-from src.config import get_all_company_aliases
+from earnings_qa.llm import get_llm_client
+from earnings_qa.config import get_all_company_aliases
 
 logger = logging.getLogger(__name__)
 

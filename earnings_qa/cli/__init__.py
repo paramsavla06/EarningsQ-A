@@ -1,6 +1,6 @@
 """CLI (Command-Line Interface) module."""
 
-from src.cli.interface import main, EarningsQACLI
+from earnings_qa.cli.interface import main, EarningsQACLI
 
 __all__ = [
     "main",

@@ -2,6 +2,8 @@
 
 from typing import Optional
 
+PROMPT_VERSION = "v1.0.0"
+
 SYSTEM_PROMPT = """You are a professional financial analyst specializing in earnings call transcripts.
 
 STRICT CONSTRAINTS:

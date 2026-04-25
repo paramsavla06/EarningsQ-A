@@ -7,9 +7,9 @@ from pathlib import Path
 
 import click
 
-from src.config import LOGS_DIR, DATA_DIR
-from src.rag import TranscriptIngestionPipeline, EmbeddingPipeline, Retriever
-from src.core.chat_service import ChatService
+from earnings_qa.config import LOGS_DIR, DATA_DIR
+from earnings_qa.rag import TranscriptIngestionPipeline, EmbeddingPipeline, Retriever
+from earnings_qa.core.chat_service import ChatService
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,8 @@ class EarningsQACLI:
                 logger.info("✓ Loaded existing RAG index")
 
                 # Check staleness
-                manifest_path = Path(__file__).parent.parent.parent / "config" / "transcripts_manifest.json"
+                from earnings_qa.config import PACKAGE_ROOT
+                manifest_path = PACKAGE_ROOT / "config" / "transcripts_manifest.json"
                 if manifest_path.exists() and hasattr(embedding_pipeline, 'metadata'):
                     with open(manifest_path, 'rb') as f:
                         current_hash = hashlib.md5(f.read()).hexdigest()

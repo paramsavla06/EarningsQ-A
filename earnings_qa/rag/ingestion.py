@@ -6,7 +6,7 @@ from typing import List, Tuple
 import pdfplumber
 import json
 
-from src.config import DATA_DIR, CHUNK_SIZE, CHUNK_OVERLAP
+from earnings_qa.config import DATA_DIR, CHUNK_SIZE, CHUNK_OVERLAP
 
 logger = logging.getLogger(__name__)
 

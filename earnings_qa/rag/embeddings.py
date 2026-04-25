@@ -20,11 +20,11 @@ except ImportError:
 
 import faiss
 
-from src.config import (
+from earnings_qa.config import (
     GEMINI_API_KEY, EMBEDDING_MODEL, USE_MOCK_LLM,
     USE_OLLAMA_EMBED, OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL,
 )
-from src.rag.ingestion import Document
+from earnings_qa.rag.ingestion import Document
 
 # Force the SDK to use our configured key, not any stale system GOOGLE_API_KEY
 if GEMINI_API_KEY:
@@ -74,26 +74,25 @@ class EmbeddingPipeline:
         return vals
 
     def embed_text(self, text: str, max_retries: int = 8) -> np.ndarray:
-        """Embed a single text using Gemini embedding model.
+        """Embed a single text using Gemini embedding model."""
+        from earnings_qa.core.cache import cache
+        
+        if not text:
+            return np.array([]).astype(np.float32)
 
-        Retries automatically on 429 rate-limit responses using the
-        retryDelay value from the API error. Raises on daily quota exhaustion.
+        cached = cache.get_embedding(text)
+        if cached is not None:
+            return cached
 
-        Args:
-            text: Text to embed
-            max_retries: Maximum retry attempts for transient rate limits
-
-        Returns:
-            Embedding vector (numpy array)
-
-        Raises:
-            RuntimeError: If daily quota is exhausted
-        """
         if USE_MOCK_LLM:
-            return np.random.randn(EMBEDDING_DIM).astype(np.float32)
+            res = np.random.randn(EMBEDDING_DIM).astype(np.float32)
+            cache.set_embedding(text, res)
+            return res
 
         if USE_OLLAMA_EMBED:
-            return self._embed_via_ollama(text)
+            res = self._embed_via_ollama(text)
+            cache.set_embedding(text, res)
+            return res
 
         for attempt in range(max_retries + 1):
             try:
@@ -112,6 +111,7 @@ class EmbeddingPipeline:
                 vals = np.array(vals).astype(np.float32)
                 # Normalize query vector
                 faiss.normalize_L2(vals.reshape(1, -1))
+                cache.set_embedding(text, vals)
                 return vals
 
             except Exception as e:
@@ -142,30 +142,47 @@ class EmbeddingPipeline:
         raise RuntimeError(f"Failed to embed text after {max_retries} retries.")
 
     def embed_texts(self, texts: List[str], max_retries: int = 8) -> np.ndarray:
-        """Embed a batch of texts using Gemini embedding model.
+        """Embed a batch of texts using Gemini embedding model."""
+        from earnings_qa.core.cache import cache
 
-        Args:
-            texts: List of texts to embed
-            max_retries: Maximum retry attempts for transient rate limits
-
-        Returns:
-            Embedding vector matrix (numpy array)
-        """
         if not texts:
             return np.array([]).astype(np.float32)
 
+        # Check cache
+        uncached_indices = []
+        uncached_texts = []
+        results = [None] * len(texts)
+
+        for i, text in enumerate(texts):
+            cached = cache.get_embedding(text)
+            if cached is not None:
+                results[i] = cached
+            else:
+                uncached_indices.append(i)
+                uncached_texts.append(text)
+
+        if not uncached_texts:
+            return np.vstack(results)
+
         if USE_MOCK_LLM:
-            return np.random.randn(len(texts), EMBEDDING_DIM).astype(np.float32)
+            mock_res = np.random.randn(len(uncached_texts), EMBEDDING_DIM).astype(np.float32)
+            for i, idx in enumerate(uncached_indices):
+                cache.set_embedding(uncached_texts[i], mock_res[i])
+                results[idx] = mock_res[i]
+            return np.vstack(results)
 
         if USE_OLLAMA_EMBED:
-            # Ollama doesn't natively support batching in all versions, loop over them
-            return np.vstack([self._embed_via_ollama(t) for t in texts])
+            for i, idx in enumerate(uncached_indices):
+                res = self._embed_via_ollama(uncached_texts[i])
+                cache.set_embedding(uncached_texts[i], res)
+                results[idx] = res
+            return np.vstack(results)
 
         for attempt in range(max_retries + 1):
             try:
                 result = self.client.models.embed_content(
                     model=self.embedding_model,
-                    contents=texts,
+                    contents=uncached_texts,
                 )
 
                 embeddings = []
@@ -179,7 +196,12 @@ class EmbeddingPipeline:
 
                 vals = np.array(embeddings).astype(np.float32)
                 faiss.normalize_L2(vals)
-                return vals
+                
+                for i, idx in enumerate(uncached_indices):
+                    cache.set_embedding(uncached_texts[i], vals[i])
+                    results[idx] = vals[i]
+                    
+                return np.vstack(results)
 
             except Exception as e:
                 err_str = str(e)
@@ -311,7 +333,8 @@ class EmbeddingPipeline:
             pickle.dump(self.documents, f)
 
         # Calculate manifest hash
-        manifest_path = Path(__file__).parent.parent.parent / "config" / "transcripts_manifest.json"
+        from earnings_qa.config import PACKAGE_ROOT
+        manifest_path = PACKAGE_ROOT / "config" / "transcripts_manifest.json"
         manifest_hash = "unknown"
         if manifest_path.exists():
             with open(manifest_path, 'rb') as f:
