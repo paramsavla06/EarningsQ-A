@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from typing import List, Tuple
 import pdfplumber
+import json
 
 from src.config import DATA_DIR, CHUNK_SIZE, CHUNK_OVERLAP
 
@@ -141,17 +142,7 @@ class TranscriptIngestionPipeline:
         return chunks
 
     def ingest_transcripts(self, data_dir: Path = DATA_DIR) -> List[Document]:
-        """Ingest all transcripts from data directory.
-
-        Expected structure:
-        data_dir/
-            ├── 532400/
-            │   ├── Q1/
-            │   │   └── YYYYMMDD_532400_EarningsCallTranscript.pdf
-            │   └── Q2/
-            └── 542652/
-                └── FY2025/
-                    └── Q3/
+        """Ingest all transcripts from data directory using the manifest.
 
         Args:
             data_dir: Root data directory
@@ -165,44 +156,45 @@ class TranscriptIngestionPipeline:
             logger.error(f"Data directory not found: {data_dir}")
             return all_documents
 
-        # Iterate through company folders
-        for company_folder in data_dir.iterdir():
-            if not company_folder.is_dir():
+        manifest_path = Path(__file__).parent.parent.parent / "config" / "transcripts_manifest.json"
+        if not manifest_path.exists():
+            logger.error(f"Manifest not found: {manifest_path}")
+            return all_documents
+
+        try:
+            with open(manifest_path, 'r', encoding='utf-8') as f:
+                manifest_data = json.load(f)
+        except Exception as e:
+            logger.error(f"Error reading manifest: {e}")
+            return all_documents
+
+        transcripts = manifest_data.get("transcripts", [])
+        if not transcripts:
+            logger.warning("No transcripts found in manifest")
+            return all_documents
+
+        for entry in transcripts:
+            company_id = entry.get("company_id")
+            quarter = entry.get("quarter")
+            fiscal_year = entry.get("fiscal_year")
+            source_file_path = entry.get("source_file_path")
+            
+            if not all([company_id, quarter, fiscal_year, source_file_path]):
+                logger.warning(f"Incomplete manifest entry: {entry}")
+                continue
+                
+            pdf_path = data_dir / source_file_path
+            
+            if not pdf_path.exists():
+                logger.warning(f"PDF not found: {pdf_path}")
                 continue
 
-            company_id = company_folder.name
-            logger.info(f"Processing company: {company_id}")
+            logger.info(f"Processing transcript: {pdf_path.name}")
+            text = self.extract_pdf_text(pdf_path)
 
-            # Find all PDF files recursively
-            pdf_files = list(company_folder.rglob("*_EarningsCallTranscript.pdf"))
-
-            if not pdf_files:
-                logger.warning(f"No PDFs found in {company_folder}")
-                continue  # Skip empty companies
-
-            for pdf_path in pdf_files:
-                # Extract text from PDF
-                text = self.extract_pdf_text(pdf_path)
-
-                if text:
-                    # Parse filename for basic metadata
-                    parsed_company, _, year = self.parse_filename(pdf_path.name)
-
-                    if parsed_company and year:
-                        # Extract the actual quarter from the folder path (e.g. 'Q1', 'Q3')
-                        actual_quarter = None
-                        for part in pdf_path.parts:
-                            if part in ["Q1", "Q2", "Q3", "Q4"]:
-                                actual_quarter = part
-                                break
-                        
-                        if not actual_quarter:
-                            actual_quarter = "Unknown"
-
-                        # Chunk the text
-                        chunks = self.chunk_text(
-                            text, parsed_company, actual_quarter, year)
-                        all_documents.extend(chunks)
+            if text:
+                chunks = self.chunk_text(text, company_id, quarter, fiscal_year)
+                all_documents.extend(chunks)
 
         logger.info(f"Total ingested documents: {len(all_documents)}")
         return all_documents

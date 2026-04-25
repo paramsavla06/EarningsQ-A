@@ -1,6 +1,7 @@
 """Configuration and constants for earnings QA system."""
 
 import os
+import json
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -15,6 +16,32 @@ LOGS_DIR = PROJECT_ROOT / "logs"
 
 # Ensure directories exist
 LOGS_DIR.mkdir(exist_ok=True)
+
+# Load Company Catalog
+def _load_company_catalog():
+    catalog_path = PROJECT_ROOT / "config" / "company_catalog.json"
+    if catalog_path.exists():
+        with open(catalog_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data.get("companies", [])
+    return []
+
+COMPANY_CATALOG = _load_company_catalog()
+
+def get_company_mapping():
+    """Returns dict of company_id -> list of aliases."""
+    return {c["company_id"]: c.get("aliases", []) for c in COMPANY_CATALOG}
+
+def get_company_names():
+    """Returns dict of company_id -> company name."""
+    return {c["company_id"]: c["company_name"] for c in COMPANY_CATALOG}
+
+def get_all_company_aliases():
+    """Returns list of all known aliases."""
+    aliases = []
+    for c in COMPANY_CATALOG:
+        aliases.extend(c.get("aliases", []))
+    return aliases
 
 # Mock Mode (for development without API calls)
 USE_MOCK_LLM = os.getenv("USE_MOCK_LLM", "false").lower() == "true"

@@ -6,7 +6,7 @@ from typing import List, Optional, Tuple
 
 from src.rag.ingestion import Document
 from src.rag.embeddings import EmbeddingPipeline
-from src.config import TOP_K_RETRIEVAL
+from src.config import TOP_K_RETRIEVAL, get_company_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +28,7 @@ class Retriever:
     def _detect_company_intents(self, query: str) -> List[str]:
         """Detect all companies requested."""
         query_lower = query.lower()
-        mapping = {
-            "532400": ["bsoft", "birlasoft", "birla soft", "birla soft limited", "532400"],
-            "542652": ["polycab", "wires", "542652"],
-            "543654": ["medanta", "global health", "543654"],
-            "544350": ["agarwal", "544350"]
-        }
+        mapping = get_company_mapping()
         found = []
         for cid, keywords in mapping.items():
             if any(k in query_lower for k in keywords):

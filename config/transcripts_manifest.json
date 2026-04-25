@@ -1,0 +1,88 @@
+{
+  "transcripts": [
+    {
+      "company_id": "532400",
+      "quarter": "Q1",
+      "fiscal_year": 2025,
+      "source_file_path": "532400\\Q1\\20240808_532400_EarningsCallTranscript.pdf",
+      "checksum": "fc79432650c02b816651fdec25c2a2f1"
+    },
+    {
+      "company_id": "532400",
+      "quarter": "Q2",
+      "fiscal_year": 2025,
+      "source_file_path": "532400\\Q2\\20241107_532400_EarningsCallTranscript.pdf",
+      "checksum": "922504568ab929a0060a761dfd8550f7"
+    },
+    {
+      "company_id": "532400",
+      "quarter": "Q3",
+      "fiscal_year": 2025,
+      "source_file_path": "532400\\Q3\\20250130_532400_EarningsCallTranscript.pdf",
+      "checksum": "72a6e2557463dfa7e1861119c80cb902"
+    },
+    {
+      "company_id": "532400",
+      "quarter": "Q4",
+      "fiscal_year": 2026,
+      "source_file_path": "532400\\Q4\\20250605_532400_EarningsCallTranscript.pdf",
+      "checksum": "c4cbc3d1a936ade865a7436ab659f61d"
+    },
+    {
+      "company_id": "542652",
+      "quarter": "Q3",
+      "fiscal_year": 2025,
+      "source_file_path": "542652\\FY2025\\Q3\\20250123_542652_EarningsCallTranscript.pdf",
+      "checksum": "2e1903b4ca2c238a9b147bbfd980bebc"
+    },
+    {
+      "company_id": "542652",
+      "quarter": "Q4",
+      "fiscal_year": 2026,
+      "source_file_path": "542652\\FY2025\\Q4\\20250507_542652_EarningsCallTranscript.pdf",
+      "checksum": "47cd175d23ce13a34139cc6adcd3fd29"
+    },
+    {
+      "company_id": "543654",
+      "quarter": "Q1",
+      "fiscal_year": 2025,
+      "source_file_path": "543654\\FY2025\\Q1\\20240809_543654_EarningsCallTranscript.pdf",
+      "checksum": "f9082da65f751a82d71ac3b1b225fffa"
+    },
+    {
+      "company_id": "543654",
+      "quarter": "Q2",
+      "fiscal_year": 2025,
+      "source_file_path": "543654\\FY2025\\Q2\\20241114_543654_EarningsCallTranscript.pdf",
+      "checksum": "85a05f769399cc0298dcc0889ef9a4d9"
+    },
+    {
+      "company_id": "543654",
+      "quarter": "Q3",
+      "fiscal_year": 2024,
+      "source_file_path": "543654\\FY2025\\Q3\\20240205_543654_EarningsCallTranscript.pdf",
+      "checksum": "f0303879ee2241a983d09b18880605aa"
+    },
+    {
+      "company_id": "543654",
+      "quarter": "Q4",
+      "fiscal_year": 2026,
+      "source_file_path": "543654\\FY2025\\Q4\\20250516_543654_EarningsCallTranscript.pdf",
+      "checksum": "2b7b0b28a8972001e15de451a29de09b"
+    },
+    {
+      "company_id": "544350",
+      "quarter": "Q3",
+      "fiscal_year": 2025,
+      "source_file_path": "544350\\FY2025\\Q3\\20250217_544350_EarningsCallTranscript.pdf",
+      "checksum": "9705ed973c2f80d6c216b00329ef8dfa"
+    },
+    {
+      "company_id": "544350",
+      "quarter": "Q4",
+      "fiscal_year": 2026,
+      "source_file_path": "544350\\FY2025\\Q4\\20250529_544350_EarningsCallTranscript.pdf",
+      "checksum": "6a8cf715f801bc807b09176e2264f673"
+    }
+  ]
+}

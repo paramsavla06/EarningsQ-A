@@ -4,6 +4,7 @@ import logging
 from typing import Tuple, List, Optional
 
 from src.llm import get_llm_client
+from src.config import get_all_company_aliases
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +20,7 @@ class GuardrailValidator:
     def _has_company_marker(text: str) -> bool:
         """Detect whether text names a known company or company id."""
         text_lower = text.lower()
-        company_markers = [
-            "birlasoft", "bsoft", "medanta", "global health", "polycab", "wires",
-            "agarwal", "dr. agarwal", "dr agarwal", "543654", "542652", "532400", "544350"
-        ]
+        company_markers = get_all_company_aliases()
         return any(marker in text_lower for marker in company_markers)
 
     def check_scope(self, query: str, conversation_context: Optional[str] = None) -> Tuple[bool, str]:

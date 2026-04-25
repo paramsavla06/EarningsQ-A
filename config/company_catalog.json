@@ -1,0 +1,36 @@
+{
+  "companies": [
+    {
+      "company_id": "532400",
+      "company_name": "Birlasoft Limited",
+      "aliases": ["bsoft", "birlasoft", "birla soft", "birla soft limited", "532400"],
+      "ticker": "BSOFT",
+      "sector": "IT Services",
+      "source_folder": "532400"
+    },
+    {
+      "company_id": "542652",
+      "company_name": "Polycab India",
+      "aliases": ["polycab", "wires", "542652"],
+      "ticker": "POLYCAB",
+      "sector": "Manufacturing",
+      "source_folder": "542652"
+    },
+    {
+      "company_id": "543654",
+      "company_name": "Medanta",
+      "aliases": ["medanta", "global health", "543654"],
+      "ticker": "MEDANTA",
+      "sector": "Healthcare",
+      "source_folder": "543654"
+    },
+    {
+      "company_id": "544350",
+      "company_name": "Dr. Agarwal's Eye Hospital",
+      "aliases": ["agarwal", "dr. agarwal", "dr agarwal", "agarwal eye", "544350"],
+      "ticker": "AGARWAL",
+      "sector": "Healthcare",
+      "source_folder": "544350"
+    }
+  ]
+}
