@@ -6,12 +6,13 @@ from typing import List, Optional, Tuple
 
 from src.rag.ingestion import Document
 from src.rag.embeddings import EmbeddingPipeline
+from src.rag.backend import RetrieverBackend
 from src.config import TOP_K_RETRIEVAL, get_company_mapping
 
 logger = logging.getLogger(__name__)
 
 
-class Retriever:
+class Retriever(RetrieverBackend):
     """Retrieve documents from FAISS index based on query."""
 
     def __init__(self, embedding_pipeline: EmbeddingPipeline):
@@ -183,37 +184,8 @@ class Retriever:
 
         return results
 
-    def format_context(
-        self,
-        documents: List[Tuple[Document, float]],
-        max_chars: int = 3000,
-    ) -> str:
-        """Format retrieved documents into context string for LLM.
+    def get_all_documents(self) -> List[Document]:
+        """Return all documents in the index."""
+        return self.documents
 
-        Args:
-            documents: List of (Document, similarity) tuples
-            max_chars: Maximum characters to include
 
-        Returns:
-            Formatted context string
-        """
-        if not documents:
-            return "No relevant context found."
-
-        context_lines = []
-        total_chars = 0
-
-        for i, (doc, similarity) in enumerate(documents):
-            # Format each document with metadata
-            header = f"[{doc.company_id} {doc.quarter}{doc.year} - Match: {similarity:.2%}]"
-            content = doc.content[:500]  # First 500 chars
-
-            entry = f"{header}\n{content}\n"
-
-            if total_chars + len(entry) > max_chars:
-                break
-
-            context_lines.append(entry)
-            total_chars += len(entry)
-
-        return "\n---\n".join(context_lines)

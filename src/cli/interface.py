@@ -61,7 +61,8 @@ class EarningsQACLI:
         self._load_index()
 
     def _load_index(self) -> None:
-        """Load existing RAG index if available."""
+        """Load existing RAG index if available and check for staleness."""
+        import hashlib
         if self.index_path.exists():
             try:
                 embedding_pipeline = EmbeddingPipeline()
@@ -69,6 +70,17 @@ class EarningsQACLI:
                 self.chat_service.retriever = Retriever(embedding_pipeline)
                 self.indexed = True
                 logger.info("✓ Loaded existing RAG index")
+
+                # Check staleness
+                manifest_path = Path(__file__).parent.parent.parent / "config" / "transcripts_manifest.json"
+                if manifest_path.exists() and hasattr(embedding_pipeline, 'metadata'):
+                    with open(manifest_path, 'rb') as f:
+                        current_hash = hashlib.md5(f.read()).hexdigest()
+                    index_hash = embedding_pipeline.metadata.get("manifest_hash")
+                    if index_hash and index_hash != current_hash:
+                        click.echo("⚠️  WARNING: Transcripts manifest has changed since the index was built. The index is stale.")
+                        click.echo("   Please run `python main.py --index` to update the RAG index.")
+
             except Exception as e:
                 logger.warning(f"Could not load existing index: {e}")
                 self.indexed = False
@@ -108,6 +120,29 @@ class EarningsQACLI:
             click.echo(f"❌ Error creating index: {e}\n", err=True)
             logger.error(f"Index creation error: {e}")
             return False
+
+    def _create_index_bg(self) -> None:
+        """Create RAG index from transcripts in the background."""
+        import threading
+        
+        def _build():
+            try:
+                logger.info("Background indexing started...")
+                ingestion = TranscriptIngestionPipeline()
+                documents = ingestion.ingest_transcripts(DATA_DIR)
+                if documents:
+                    embedding_pipeline = EmbeddingPipeline()
+                    embedding_pipeline.build_index(documents, output_path=self.index_path)
+                    # Safe to update retriever assignment in python thread
+                    self.chat_service.retriever = Retriever(embedding_pipeline)
+                    self.indexed = True
+                    logger.info("Background indexing complete.")
+            except Exception as e:
+                logger.error(f"Background indexing failed: {e}")
+
+        thread = threading.Thread(target=_build, daemon=True)
+        thread.start()
+        click.echo("🚀 Indexing started in the background. You can continue chatting, but answers will be limited until the index finishes building.")
 
     def _chat_loop(
         self,
@@ -194,7 +229,12 @@ class EarningsQACLI:
     is_flag=True,
     help="List indexed documents",
 )
-def main(company: Optional[str], quarter: Optional[str], index: bool, list_docs: bool):
+@click.option(
+    "--index-bg",
+    is_flag=True,
+    help="Index transcripts in the background",
+)
+def main(company: Optional[str], quarter: Optional[str], index: bool, index_bg: bool, list_docs: bool):
     """Earnings Call Q&A Chatbot - Ask questions about company earnings calls."""
 
     setup_logging()
@@ -219,7 +259,7 @@ def main(company: Optional[str], quarter: Optional[str], index: bool, list_docs:
             return
 
         click.echo("\n📄 Indexed Documents:\n")
-        documents = cli.chat_service.retriever.documents
+        documents = cli.chat_service.retriever.get_all_documents()
 
         # Group by company and quarter
         by_company = {}
@@ -235,8 +275,10 @@ def main(company: Optional[str], quarter: Optional[str], index: bool, list_docs:
         click.echo(f"\nTotal: {len(documents)} chunks indexed\n")
         return
 
-    # Default: Start chat loop
-    if not cli.indexed:
+    if index_bg:
+        cli._create_index_bg()
+    elif not cli.indexed:
+        # Default: Start chat loop
         click.echo("⚠️  No RAG index loaded.")
         create_now = click.confirm("Would you like to index transcripts now?")
         if create_now:

@@ -141,8 +141,71 @@ class EmbeddingPipeline:
 
         raise RuntimeError(f"Failed to embed text after {max_retries} retries.")
 
-    def embed_documents(self, documents: List[Document], batch_size: int = 10) -> np.ndarray:
-        """Embed a batch of documents.
+    def embed_texts(self, texts: List[str], max_retries: int = 8) -> np.ndarray:
+        """Embed a batch of texts using Gemini embedding model.
+
+        Args:
+            texts: List of texts to embed
+            max_retries: Maximum retry attempts for transient rate limits
+
+        Returns:
+            Embedding vector matrix (numpy array)
+        """
+        if not texts:
+            return np.array([]).astype(np.float32)
+
+        if USE_MOCK_LLM:
+            return np.random.randn(len(texts), EMBEDDING_DIM).astype(np.float32)
+
+        if USE_OLLAMA_EMBED:
+            # Ollama doesn't natively support batching in all versions, loop over them
+            return np.vstack([self._embed_via_ollama(t) for t in texts])
+
+        for attempt in range(max_retries + 1):
+            try:
+                result = self.client.models.embed_content(
+                    model=self.embedding_model,
+                    contents=texts,
+                )
+
+                embeddings = []
+                if hasattr(result, 'embeddings') and result.embeddings:
+                    embeddings = [emb.values for emb in result.embeddings]
+                elif isinstance(result, list):
+                    # Sometimes the API returns a list of dicts
+                    embeddings = [item['embedding'] if isinstance(item, dict) and 'embedding' in item else item for item in result]
+                else:
+                    raise ValueError(f"Unknown embedding response format: {type(result)}")
+
+                vals = np.array(embeddings).astype(np.float32)
+                faiss.normalize_L2(vals)
+                return vals
+
+            except Exception as e:
+                err_str = str(e)
+
+                if "PerDay" in err_str:
+                    raise RuntimeError(
+                        "Gemini free-tier daily quota exhausted (1000 requests/day)."
+                    ) from e
+
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                    match = re.search(r"'retryDelay':\s*'(\d+(?:\.\d+)?)s'", err_str)
+                    wait = float(match.group(1)) + 1.0 if match else (2 ** attempt) * 5
+                    logger.warning(
+                        f"Rate limited (429). Waiting {wait:.1f}s "
+                        f"(retry {attempt + 1}/{max_retries})..."
+                    )
+                    time.sleep(wait)
+                    continue
+
+                logger.error(f"Embedding error (attempt {attempt + 1}): {e}")
+                raise
+
+        raise RuntimeError(f"Failed to embed texts after {max_retries} retries.")
+
+    def embed_documents(self, documents: List[Document], batch_size: int = 100) -> np.ndarray:
+        """Embed a batch of documents using true batch requests.
 
         Args:
             documents: List of documents to embed
@@ -151,19 +214,23 @@ class EmbeddingPipeline:
         Returns:
             Embedding matrix (n_documents x embedding_dim)
         """
-        embeddings = []
+        all_embeddings = []
 
-        for i, doc in enumerate(documents):
-            if i % batch_size == 0:
-                logger.info(f"Embedding document {i+1}/{len(documents)}")
+        for i in range(0, len(documents), batch_size):
+            batch_docs = documents[i:i + batch_size]
+            logger.info(f"Embedding documents {i+1} to {min(i+batch_size, len(documents))} / {len(documents)}")
+            
+            texts = [doc.content[:2000] for doc in batch_docs]
+            batch_embeddings = self.embed_texts(texts)
+            
+            if batch_embeddings.ndim == 1:
+                batch_embeddings = batch_embeddings.reshape(1, -1)
+                
+            all_embeddings.append(batch_embeddings)
 
-            # Embed document content (first 2000 chars to avoid token limits)
-            embedding = self.embed_text(doc.content[:2000])
-            embeddings.append(embedding)
-
-        embeddings_array = np.array(embeddings).astype(np.float32)
+        embeddings_array = np.vstack(all_embeddings) if all_embeddings else np.array([]).astype(np.float32)
         logger.info(
-            f"Created {embeddings_array.shape[0]} embeddings of dimension {embeddings_array.shape[1]}")
+            f"Created {embeddings_array.shape[0]} embeddings of dimension {embeddings_array.shape[1] if embeddings_array.size > 0 else 0}")
 
         return embeddings_array
 
@@ -223,6 +290,10 @@ class EmbeddingPipeline:
         Args:
             output_path: Path to save index
         """
+        import json
+        from datetime import datetime
+        import hashlib
+
         if self.index is None or self.embeddings is None:
             logger.error("No index to save")
             return
@@ -239,6 +310,22 @@ class EmbeddingPipeline:
         with open(output_path / "documents.pkl", "wb") as f:
             pickle.dump(self.documents, f)
 
+        # Calculate manifest hash
+        manifest_path = Path(__file__).parent.parent.parent / "config" / "transcripts_manifest.json"
+        manifest_hash = "unknown"
+        if manifest_path.exists():
+            with open(manifest_path, 'rb') as f:
+                manifest_hash = hashlib.md5(f.read()).hexdigest()
+
+        # Save index metadata
+        metadata = {
+            "build_time": datetime.now().isoformat(),
+            "manifest_hash": manifest_hash,
+            "model_version": self.embedding_model,
+        }
+        with open(output_path / "metadata.json", "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2)
+
         logger.info(f"Saved index to {output_path}")
 
     def load_index(self, input_path: Path) -> Tuple[faiss.IndexFlatL2, np.ndarray]:
@@ -250,6 +337,8 @@ class EmbeddingPipeline:
         Returns:
             Tuple of (FAISS index, embeddings array)
         """
+        import json
+
         if not input_path.exists():
             logger.error(f"Index path not found: {input_path}")
             return None, None
@@ -263,6 +352,13 @@ class EmbeddingPipeline:
         # Load documents metadata
         with open(input_path / "documents.pkl", "rb") as f:
             self.documents = pickle.load(f)
+
+        # Load metadata if exists
+        self.metadata = {}
+        metadata_path = input_path / "metadata.json"
+        if metadata_path.exists():
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                self.metadata = json.load(f)
 
         logger.info(
             f"Loaded index from {input_path} ({len(self.documents)} documents)")

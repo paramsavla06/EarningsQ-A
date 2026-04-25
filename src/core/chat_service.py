@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from src.config import LOGS_DIR, MAX_CONVERSATION_HISTORY
 from src.llm import get_llm_client
 from src.llm.prompts import SYSTEM_PROMPT, get_retrieval_prompt
-from src.rag import Retriever
+from src.rag.backend import RetrieverBackend
 from src.guardrails import GuardrailValidator
 
 logger = logging.getLogger(__name__)
@@ -94,7 +94,7 @@ class ChatResponse:
 class ChatService:
     """Core service orchestrating retrieval, extraction, and generation."""
 
-    def __init__(self, retriever: Optional[Retriever] = None):
+    def __init__(self, retriever: Optional[RetrieverBackend] = None):
         """Initialize chat service."""
         self.llm = get_llm_client()
         self.conversation = ConversationHistory()
@@ -480,7 +480,7 @@ class ChatService:
         question: str,
         company_filter: Optional[str],
         quarter_filter: Optional[str],
-        retriever: Optional[Retriever],
+        retriever: Optional[RetrieverBackend],
     ) -> bool:
         if not retriever:
             return False

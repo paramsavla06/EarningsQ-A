@@ -19,6 +19,7 @@ from src.config import (
     GEMINI_API_KEY, LLM_MODEL, LLM_TEMPERATURE, LLM_MAX_TOKENS, USE_MOCK_LLM,
     USE_OLLAMA_LLM, OLLAMA_BASE_URL, OLLAMA_LLM_MODEL,
 )
+from src.llm.backend import LLMBackend
 
 # Force the SDK to use our configured key.
 # The google-genai SDK prefers GOOGLE_API_KEY over an explicitly passed api_key
@@ -30,7 +31,7 @@ if GEMINI_API_KEY:
 logger = logging.getLogger(__name__)
 
 
-class MockLLMClient:
+class MockLLMClient(LLMBackend):
     """Mock LLM client for development without API calls."""
 
     def __init__(self, api_key: str = None, model: str = LLM_MODEL):
@@ -87,7 +88,7 @@ class MockLLMClient:
         return len(text) // 4
 
 
-class LLMClient:
+class LLMClient(LLMBackend):
     """Wrapper around Google Gemini client with retry logic and error handling."""
 
     def __init__(self, api_key: str = GEMINI_API_KEY, model: str = LLM_MODEL):
@@ -183,7 +184,7 @@ class LLMClient:
         return len(text) // 4
 
 
-class OllamaLLMClient:
+class OllamaLLMClient(LLMBackend):
     """LLM client backed by a local Ollama server (no API key required)."""
 
     def __init__(self, base_url: str = OLLAMA_BASE_URL, model: str = OLLAMA_LLM_MODEL):
@@ -237,7 +238,7 @@ class OllamaLLMClient:
         return len(text) // 4
 
 
-def get_llm_client():
+def get_llm_client() -> LLMBackend:
     """Factory: returns the right LLM client based on config.
 
     Priority: MockLLMClient > OllamaLLMClient > LLMClient (Gemini)
