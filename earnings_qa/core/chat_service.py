@@ -1,17 +1,20 @@
 import logging
 import json
 import re
+import time
 from datetime import datetime
 from typing import Optional, List, Tuple
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from earnings_qa.config import LOGS_DIR, MAX_CONVERSATION_HISTORY
 from earnings_qa.llm import get_llm_client
 from earnings_qa.llm.prompts import SYSTEM_PROMPT, get_retrieval_prompt, PROMPT_VERSION
 from earnings_qa.rag.backend import RetrieverBackend
 from earnings_qa.guardrails import GuardrailValidator
+from earnings_qa.guardrails.validator import GUARDRAIL_VERSION
 from earnings_qa.core.cache import cache
+from earnings_qa.core.observability import emit, new_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +93,7 @@ class ChatResponse:
     direct_answer: Optional[str] = None
     llm_answer: Optional[str] = None
     error_msg: Optional[str] = None
+    request_id: str = field(default_factory=new_request_id)
 
 
 class ChatService:
@@ -503,19 +507,37 @@ class ChatService:
         quarter_filter: Optional[str] = None,
     ) -> ChatResponse:
         """Process a user question and generate a response."""
+        request_id = new_request_id()
+        t_start = time.monotonic()
+        backend_name = type(self.llm).__name__
+
         conversation_context = self.conversation.get_context()
         history_company_filter, history_quarter_filter = self._resolve_scope_from_history()
 
         resolved_company_filter = company_filter or history_company_filter
         resolved_quarter_filter = quarter_filter or history_quarter_filter
 
-        # Apply scope guardrail
+        # ── Scope guardrail ────────────────────────────────────────────────────
         in_scope, scope_msg = self.validator.check_scope(
-            question,
-            conversation_context=conversation_context,
+            question, conversation_context=conversation_context,
         )
         if not in_scope:
-            return ChatResponse(error_msg=scope_msg)
+            emit(
+                request_id=request_id,
+                question=question,
+                query_type="scope_error",
+                company_id=resolved_company_filter,
+                quarter=resolved_quarter_filter,
+                retrieval_count=0,
+                retrieval_confidence=None,
+                direct_answer_used=False,
+                cache_hit=False,
+                latency_ms=(time.monotonic() - t_start) * 1000,
+                backend_llm=backend_name,
+                guardrail_version=GUARDRAIL_VERSION,
+                guardrail_status="OUT_OF_SCOPE",
+            )
+            return ChatResponse(request_id=request_id, error_msg=scope_msg)
 
         if self._is_vague_growth_reason_question(question, conversation_context=conversation_context):
             msg = (
@@ -525,31 +547,65 @@ class ChatService:
             self.conversation.add("user", question)
             self.conversation.add("assistant", msg)
             log_query(question, msg, company_filter, quarter_filter)
-            return ChatResponse(error_msg=msg)
+            emit(
+                request_id=request_id,
+                question=question,
+                query_type="scope_error",
+                company_id=resolved_company_filter,
+                quarter=resolved_quarter_filter,
+                retrieval_count=0,
+                retrieval_confidence=None,
+                direct_answer_used=False,
+                cache_hit=False,
+                latency_ms=(time.monotonic() - t_start) * 1000,
+                backend_llm=backend_name,
+                guardrail_version=GUARDRAIL_VERSION,
+                guardrail_status="VAGUE_GROWTH",
+            )
+            return ChatResponse(request_id=request_id, error_msg=msg)
 
-        # Check Cache
+        # ── Cache check ────────────────────────────────────────────────────────
         index_version = "unknown"
         if self.indexed and hasattr(self.retriever, 'embedding_pipeline'):
             index_version = getattr(self.retriever.embedding_pipeline, 'metadata', {}).get("manifest_hash", "unknown")
-            
+
         history_hash = cache._hash(conversation_context)
         c_filter = str(resolved_company_filter)
         q_filter = str(resolved_quarter_filter)
-        
+
         cached_answer = cache.get_answer(question.lower(), c_filter, q_filter, index_version, PROMPT_VERSION, history_hash)
         if cached_answer is not None:
-            logger.info("ChatService: Serving cached answer.")
+            logger.info("ChatService: Serving cached answer. request_id=%s", request_id)
             final_ans = ""
             if cached_answer.get("direct_answer"):
                 final_ans += cached_answer["direct_answer"] + "\n\n"
             if cached_answer.get("llm_answer"):
                 final_ans += cached_answer["llm_answer"]
-            
+
             self.conversation.add("user", question)
             self.conversation.add("assistant", final_ans.strip())
-            return ChatResponse(direct_answer=cached_answer.get("direct_answer"), llm_answer=cached_answer.get("llm_answer"))
+            emit(
+                request_id=request_id,
+                question=question,
+                query_type="cache_hit",
+                company_id=resolved_company_filter,
+                quarter=resolved_quarter_filter,
+                retrieval_count=0,
+                retrieval_confidence=None,
+                direct_answer_used=bool(cached_answer.get("direct_answer")),
+                cache_hit=True,
+                latency_ms=(time.monotonic() - t_start) * 1000,
+                backend_llm=backend_name,
+                guardrail_version=GUARDRAIL_VERSION,
+                guardrail_status="CACHED",
+            )
+            return ChatResponse(
+                request_id=request_id,
+                direct_answer=cached_answer.get("direct_answer"),
+                llm_answer=cached_answer.get("llm_answer"),
+            )
 
-        # Retrieve relevant context from RAG
+        # ── Retrieval ──────────────────────────────────────────────────────────
         context = ""
         retrieved_docs = []
 
@@ -560,8 +616,7 @@ class ChatService:
                 quarter_filter=quarter_filter,
                 retriever=self.retriever,
             ):
-                answer = self._filter_conflict_message(
-                    company_filter, quarter_filter)
+                answer = self._filter_conflict_message(company_filter, quarter_filter)
                 answer, guardrail_status = self.validator.apply_guardrails(
                     query=question,
                     response=answer,
@@ -570,9 +625,23 @@ class ChatService:
                 )
                 self.conversation.add("user", question)
                 self.conversation.add("assistant", answer)
-                log_query(question, answer,
-                          company_filter, quarter_filter)
-                return ChatResponse(error_msg=answer)
+                log_query(question, answer, company_filter, quarter_filter)
+                emit(
+                    request_id=request_id,
+                    question=question,
+                    query_type="scope_error",
+                    company_id=resolved_company_filter,
+                    quarter=resolved_quarter_filter,
+                    retrieval_count=0,
+                    retrieval_confidence=None,
+                    direct_answer_used=False,
+                    cache_hit=False,
+                    latency_ms=(time.monotonic() - t_start) * 1000,
+                    backend_llm=backend_name,
+                    guardrail_version=GUARDRAIL_VERSION,
+                    guardrail_status="FILTER_CONFLICT",
+                )
+                return ChatResponse(request_id=request_id, error_msg=answer)
 
             retrieved_docs = self.retriever.retrieve(
                 question,
@@ -582,18 +651,25 @@ class ChatService:
             if retrieved_docs:
                 context = self.retriever.format_context(retrieved_docs)
 
+        # Confidence
+        retrieval_confidence: Optional[float] = None
+        if retrieved_docs:
+            retrieval_confidence, _ = self.validator.check_confidence(retrieved_docs)
+
+        # ── Direct metric extraction ───────────────────────────────────────────
         direct_answer = self._try_direct_metric_answer(
             question,
             retrieved_docs,
             company_filter=resolved_company_filter,
             quarter_filter=resolved_quarter_filter,
         )
-        
+        query_type = "metric_lookup" if direct_answer else "qualitative"
+
         final_answer = ""
         if direct_answer:
             final_answer += direct_answer + "\n\n"
 
-        # Call the LLM to cover anything not answered by Regex.
+        # ── LLM generation ────────────────────────────────────────────────────
         user_message = get_retrieval_prompt(
             question=question,
             context=context or "No relevant context found in transcripts.",
@@ -604,36 +680,65 @@ class ChatService:
         )
 
         llm_answer = None
+        guardrail_status = "NO_LLM"
+        error_str: Optional[str] = None
         try:
             raw_llm_answer = self.llm.answer_question(
                 system_prompt=SYSTEM_PROMPT,
                 user_message=user_message,
             )
-
-            # Apply guardrails
             validated_answer, guardrail_status = self.validator.apply_guardrails(
                 query=question,
                 response=raw_llm_answer,
                 retrieved_documents=retrieved_docs,
                 conversation_context=conversation_context,
             )
-
             llm_answer = validated_answer
             final_answer += validated_answer
 
-            # Log interaction
             self.conversation.add("user", question)
             self.conversation.add("assistant", final_answer.strip())
-            log_query(question, final_answer.strip(),
-                      resolved_company_filter, resolved_quarter_filter)
+            log_query(question, final_answer.strip(), resolved_company_filter, resolved_quarter_filter)
 
         except Exception as e:
-            logger.error(f"LLM error: {e}")
-            return ChatResponse(direct_answer=direct_answer, error_msg=f"Error calling LLM: {e}")
+            error_str = str(e)
+            logger.error("LLM error [%s]: %s", request_id, e)
+            emit(
+                request_id=request_id,
+                question=question,
+                query_type=query_type,
+                company_id=resolved_company_filter,
+                quarter=resolved_quarter_filter,
+                retrieval_count=len(retrieved_docs),
+                retrieval_confidence=retrieval_confidence,
+                direct_answer_used=bool(direct_answer),
+                cache_hit=False,
+                latency_ms=(time.monotonic() - t_start) * 1000,
+                backend_llm=backend_name,
+                guardrail_version=GUARDRAIL_VERSION,
+                guardrail_status="LLM_ERROR",
+                error=error_str,
+            )
+            return ChatResponse(request_id=request_id, direct_answer=direct_answer, error_msg=f"Error calling LLM: {e}")
 
         cache.set_answer(
             question.lower(), c_filter, q_filter, index_version, PROMPT_VERSION, history_hash,
             {"direct_answer": direct_answer, "llm_answer": llm_answer}
         )
 
-        return ChatResponse(direct_answer=direct_answer, llm_answer=llm_answer)
+        emit(
+            request_id=request_id,
+            question=question,
+            query_type=query_type,
+            company_id=resolved_company_filter,
+            quarter=resolved_quarter_filter,
+            retrieval_count=len(retrieved_docs),
+            retrieval_confidence=retrieval_confidence,
+            direct_answer_used=bool(direct_answer),
+            cache_hit=False,
+            latency_ms=(time.monotonic() - t_start) * 1000,
+            backend_llm=backend_name,
+            guardrail_version=GUARDRAIL_VERSION,
+            guardrail_status=guardrail_status,
+        )
+        return ChatResponse(request_id=request_id, direct_answer=direct_answer, llm_answer=llm_answer)

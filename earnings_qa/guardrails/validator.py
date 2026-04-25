@@ -8,6 +8,8 @@ from earnings_qa.config import get_all_company_aliases
 
 logger = logging.getLogger(__name__)
 
+GUARDRAIL_VERSION = "v1.0.0"
+
 
 class GuardrailValidator:
     """Validate queries and responses for scope, confidence, and safety."""
