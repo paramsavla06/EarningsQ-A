@@ -77,10 +77,13 @@ class EarningsQACLI:
                 if manifest_path.exists() and hasattr(embedding_pipeline, 'metadata'):
                     with open(manifest_path, 'rb') as f:
                         current_hash = hashlib.md5(f.read()).hexdigest()
-                    index_hash = embedding_pipeline.metadata.get("manifest_hash")
+                    index_hash = embedding_pipeline.metadata.get(
+                        "manifest_hash")
                     if index_hash and index_hash != current_hash:
-                        click.echo("⚠️  WARNING: Transcripts manifest has changed since the index was built. The index is stale.")
-                        click.echo("   Please run `python main.py --index` to update the RAG index.")
+                        click.echo(
+                            "⚠️  WARNING: Transcripts manifest has changed since the index was built. The index is stale.")
+                        click.echo(
+                            "   Please run `python main.py --index` to update the RAG index.")
 
             except Exception as e:
                 logger.warning(f"Could not load existing index: {e}")
@@ -125,7 +128,7 @@ class EarningsQACLI:
     def _create_index_bg(self) -> None:
         """Create RAG index from transcripts in the background."""
         import threading
-        
+
         def _build():
             try:
                 logger.info("Background indexing started...")
@@ -133,7 +136,8 @@ class EarningsQACLI:
                 documents = ingestion.ingest_transcripts(DATA_DIR)
                 if documents:
                     embedding_pipeline = EmbeddingPipeline()
-                    embedding_pipeline.build_index(documents, output_path=self.index_path)
+                    embedding_pipeline.build_index(
+                        documents, output_path=self.index_path)
                     # Safe to update retriever assignment in python thread
                     self.chat_service.retriever = Retriever(embedding_pipeline)
                     self.indexed = True
@@ -181,12 +185,14 @@ class EarningsQACLI:
                     continue
 
                 if not self.indexed:
-                    click.echo("\n⚠️  RAG index not loaded. Run with --index first.\n")
+                    click.echo(
+                        "\n⚠️  RAG index not loaded. Run with --index first.\n")
 
-                response = self.chat_service.process_message(question, company_filter, quarter_filter)
+                response = self.chat_service.process_message(
+                    question, company_filter, quarter_filter)
 
                 click.echo("\nAssistant: ", nl=False)
-                
+
                 if response.error_msg:
                     click.echo(response.error_msg + "\n")
                     continue

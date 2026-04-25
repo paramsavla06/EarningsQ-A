@@ -567,15 +567,18 @@ class ChatService:
         # ── Cache check ────────────────────────────────────────────────────────
         index_version = "unknown"
         if self.indexed and hasattr(self.retriever, 'embedding_pipeline'):
-            index_version = getattr(self.retriever.embedding_pipeline, 'metadata', {}).get("manifest_hash", "unknown")
+            index_version = getattr(self.retriever.embedding_pipeline, 'metadata', {}).get(
+                "manifest_hash", "unknown")
 
         history_hash = cache._hash(conversation_context)
         c_filter = str(resolved_company_filter)
         q_filter = str(resolved_quarter_filter)
 
-        cached_answer = cache.get_answer(question.lower(), c_filter, q_filter, index_version, PROMPT_VERSION, history_hash)
+        cached_answer = cache.get_answer(question.lower(
+        ), c_filter, q_filter, index_version, PROMPT_VERSION, history_hash)
         if cached_answer is not None:
-            logger.info("ChatService: Serving cached answer. request_id=%s", request_id)
+            logger.info(
+                "ChatService: Serving cached answer. request_id=%s", request_id)
             final_ans = ""
             if cached_answer.get("direct_answer"):
                 final_ans += cached_answer["direct_answer"] + "\n\n"
@@ -616,7 +619,8 @@ class ChatService:
                 quarter_filter=quarter_filter,
                 retriever=self.retriever,
             ):
-                answer = self._filter_conflict_message(company_filter, quarter_filter)
+                answer = self._filter_conflict_message(
+                    company_filter, quarter_filter)
                 answer, guardrail_status = self.validator.apply_guardrails(
                     query=question,
                     response=answer,
@@ -645,8 +649,10 @@ class ChatService:
 
             retrieved_docs = self.retriever.retrieve(
                 question,
-                company_ids=[resolved_company_filter] if resolved_company_filter else None,
-                quarters=[resolved_quarter_filter] if resolved_quarter_filter else None,
+                company_ids=[
+                    resolved_company_filter] if resolved_company_filter else None,
+                quarters=[
+                    resolved_quarter_filter] if resolved_quarter_filter else None,
             )
             if retrieved_docs:
                 context = self.retriever.format_context(retrieved_docs)
@@ -654,7 +660,8 @@ class ChatService:
         # Confidence
         retrieval_confidence: Optional[float] = None
         if retrieved_docs:
-            retrieval_confidence, _ = self.validator.check_confidence(retrieved_docs)
+            retrieval_confidence, _ = self.validator.check_confidence(
+                retrieved_docs)
 
         # ── Direct metric extraction ───────────────────────────────────────────
         direct_answer = self._try_direct_metric_answer(
@@ -698,7 +705,8 @@ class ChatService:
 
             self.conversation.add("user", question)
             self.conversation.add("assistant", final_answer.strip())
-            log_query(question, final_answer.strip(), resolved_company_filter, resolved_quarter_filter)
+            log_query(question, final_answer.strip(),
+                      resolved_company_filter, resolved_quarter_filter)
 
         except Exception as e:
             error_str = str(e)
