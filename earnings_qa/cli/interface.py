@@ -173,7 +173,7 @@ class EarningsQACLI:
                 question = click.prompt("You").strip()
 
                 if question.lower() in ["quit", "exit"]:
-                    click.echo("\nGoodbye!")
+                    click.echo("\nAssistant: Goodbye!\n")
                     break
 
                 if question.lower() == "clear":
@@ -188,21 +188,33 @@ class EarningsQACLI:
                     click.echo(
                         "\n⚠️  RAG index not loaded. Run with --index first.\n")
 
-                response = self.chat_service.process_message(
-                    question, company_filter, quarter_filter)
+                printed_direct = [False]
+                def on_direct(text: str):
+                    if not printed_direct[0]:
+                        click.echo("\nAssistant:")
+                        click.echo(text + "\n")
+                        printed_direct[0] = True
 
-                click.echo("\nAssistant: ", nl=False)
+                try:
+                    response = self.chat_service.process_message(
+                        question, company_filter, quarter_filter,
+                        on_direct_answer=on_direct
+                    )
+                except KeyboardInterrupt:
+                    click.echo("\n[Interrupted - stopping current request]")
+                    continue
 
                 if response.error_msg:
+                    if not printed_direct[0]:
+                        click.echo("\nAssistant: ", nl=False)
                     click.echo(response.error_msg + "\n")
                     continue
 
-                if response.direct_answer:
-                    click.echo(response.direct_answer + "\n")
-
                 if response.llm_answer:
-                    if response.direct_answer:
+                    if printed_direct[0]:
                         click.echo("--- Qualitative Analysis ---\n", nl=False)
+                    else:
+                        click.echo("\nAssistant: ", nl=False)
                     click.echo(response.llm_answer + "\n")
 
             except KeyboardInterrupt:

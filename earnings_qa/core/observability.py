@@ -73,7 +73,7 @@ def emit(
         "company_id": company_id,
         "quarter": quarter,
         "retrieval_count": retrieval_count,
-        "retrieval_confidence": round(retrieval_confidence, 4) if retrieval_confidence is not None else None,
+        "retrieval_confidence": round(float(retrieval_confidence), 4) if retrieval_confidence is not None else None,
         "direct_answer_used": direct_answer_used,
         "cache_hit": cache_hit,
         "latency_ms": round(latency_ms, 1),

@@ -134,7 +134,10 @@ class ChatService:
                 "display": "Revenue",
             },
             "income": {
-                "aliases": ["income", "total income", "consolidated income"],
+                "aliases": [
+                    "total income", "consolidated income", "total consolidated income", 
+                    "consolidated total income", "income"
+                ],
                 "kind": "amount",
                 "display": "Total income",
             },
@@ -304,10 +307,21 @@ class ChatService:
                 if unit_text:
                     score += 2
             elif metric_key == "revenue":
-                if "revenue" in snippet or "revenues" in snippet or "income" in snippet:
+                if "revenue" in snippet or "revenues" in snippet:
                     score += 5
                 if "has been at" in snippet:
                     score -= 2
+                if unit_text:
+                    score += 2
+            elif metric_key == "income":
+                # Prefer snippets that contain the exact phrase "total income" or "consolidated income"
+                if "total income" in snippet or "consolidated income" in snippet:
+                    score += 6
+                if "total consolidated income" in snippet or "consolidated total income" in snippet:
+                    score += 8
+                # Penalise if this looks like a sub-line item ("other income", "finance income")
+                if "other income" in snippet or "finance income" in snippet:
+                    score -= 4
                 if unit_text:
                     score += 2
             else:
@@ -316,6 +330,13 @@ class ChatService:
 
             if "reported" in snippet or "stood at" in snippet or "came in at" in snippet or "has been at" in snippet:
                 score += 2
+            if "grew" in snippet or "increased" in snippet or "declined" in snippet:
+                score += 1
+            if "during the year" in snippet or "for the year" in snippet:
+                # Annual figures are often what users look for in Q4 transcripts
+                score += 4
+            if "during the quarter" in snippet or "for the quarter" in snippet:
+                score += 1
             if "usd" in snippet and not ("rupee terms" in snippet or "inr" in snippet):
                 score -= 2
 
@@ -325,6 +346,9 @@ class ChatService:
                 numeric = 0.0
             if metric_key == "revenue" and numeric >= 1000:
                 score += 3
+            if metric_key == "income" and numeric >= 500:
+                # Total income for Indian hospital chains typically > 500 crore/million
+                score += 2
             if metric_key == "pat" and numeric < 100:
                 score += 2
 
@@ -332,13 +356,18 @@ class ChatService:
 
         if spec["kind"] == "amount":
             patterns = [
-                rf"(?:{label_regex})\D{{0,120}}(?:was|is|at|of|stood at|reported|came in at|amounted to|totaled|totalled)?\D{{0,40}}(?:inr|rs\.?|₹|nr)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(million|crore|crores|bn|billion)?",
-                rf"(?:inr|rs\.?|₹|nr)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(million|crore|crores|bn|billion)\D{{0,80}}(?:{label_regex})",
+                # Forward: label … [verb] … [currency] amount [unit]
+                # .{0,150}? (non-greedy, any char) so digits inside "Q1 FY2025" etc. don't block matching
+                # (?<![a-z0-9]) ensures we don't match the '1' in 'Q1' or '2025' in 'FY2025'
+                # but allows 'INR9748' or 'Rs. 8,830'
+                rf"(?:{label_regex}).{{0,150}}?(?:was|is|at|of|stood at|reported|came in at|amounted to|totaled|totalled)?.{{0,60}}?(?<![a-z0-9])(?:inr|rs\.?|₹|nr)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(million|crore|crores|bn|billion)?",
+                # Backward: [currency] amount unit … label
+                rf"(?<![a-z0-9])(?:inr|rs\.?|₹|nr)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(million|crore|crores|bn|billion).{{0,100}}?(?:{label_regex})",
             ]
         else:
             patterns = [
-                rf"(?:{label_regex})\D{{0,80}}(?:was|is|at|stood at|came in at|improved to|declined to|increased to)?\D{{0,20}}([0-9][0-9,]*(?:\.[0-9]+)?)\s*%",
-                rf"([0-9][0-9,]*(?:\.[0-9]+)?)\s*%\D{{0,80}}(?:{label_regex})",
+                rf"(?:{label_regex}).{{0,100}}?(?:was|is|at|stood at|came in at|improved to|declined to|increased to)?.{{0,30}}?\b([0-9][0-9,]*(?:\.[0-9]+)?)\s*%",
+                rf"\b([0-9][0-9,]*(?:\.[0-9]+)?)\s*%.{{0,100}}?(?:{label_regex})",
             ]
 
         candidates = []
@@ -417,6 +446,8 @@ class ChatService:
             quarter_filter=quarter_filter,
         )
         if lookup_docs:
+            logger.debug("ChatService: Direct lookup using %d documents (filters: company=%s, quarter=%s)", 
+                        len(lookup_docs), detected_company_ids, detected_quarters)
             retrieved_docs = lookup_docs
 
         lines = []
@@ -505,6 +536,7 @@ class ChatService:
         question: str,
         company_filter: Optional[str] = None,
         quarter_filter: Optional[str] = None,
+        on_direct_answer=None,
     ) -> ChatResponse:
         """Process a user question and generate a response."""
         request_id = new_request_id()
@@ -582,6 +614,8 @@ class ChatService:
             final_ans = ""
             if cached_answer.get("direct_answer"):
                 final_ans += cached_answer["direct_answer"] + "\n\n"
+                if on_direct_answer:
+                    on_direct_answer(cached_answer["direct_answer"])
             if cached_answer.get("llm_answer"):
                 final_ans += cached_answer["llm_answer"]
 
@@ -675,6 +709,47 @@ class ChatService:
         final_answer = ""
         if direct_answer:
             final_answer += direct_answer + "\n\n"
+            if on_direct_answer:
+                on_direct_answer(direct_answer)
+
+        # ── Conditional LLM Skip ──────────────────────────────────────────────
+        # Only run LLM if regex missed OR if the question asks for qualitative context
+        has_qual_trigger = any(t in question.lower() for t in [
+            "why", "reason", "how", "explain", "drivers", "summarize", "overview", 
+            "highlight", "cause", "driven", "because", "compare", "difference", "impact"
+        ])
+        
+        if direct_answer and not has_qual_trigger:
+            # Simple metric lookup completed by regex - skip expensive LLM call
+            llm_answer = None
+            guardrail_status = "SKIPPED_FOR_DIRECT_ANSWER"
+            
+            self.conversation.add("user", question)
+            self.conversation.add("assistant", final_answer.strip())
+            log_query(question, final_answer.strip(),
+                      resolved_company_filter, resolved_quarter_filter)
+            
+            cache.set_answer(
+                question.lower(), c_filter, q_filter, index_version, PROMPT_VERSION, history_hash,
+                {"direct_answer": direct_answer, "llm_answer": None}
+            )
+            
+            emit(
+                request_id=request_id,
+                question=question,
+                query_type=query_type,
+                company_id=resolved_company_filter,
+                quarter=resolved_quarter_filter,
+                retrieval_count=len(retrieved_docs),
+                retrieval_confidence=retrieval_confidence,
+                direct_answer_used=True,
+                cache_hit=False,
+                latency_ms=(time.monotonic() - t_start) * 1000,
+                backend_llm=backend_name,
+                guardrail_version=GUARDRAIL_VERSION,
+                guardrail_status=guardrail_status,
+            )
+            return ChatResponse(request_id=request_id, direct_answer=direct_answer, llm_answer=None)
 
         # ── LLM generation ────────────────────────────────────────────────────
         user_message = get_retrieval_prompt(
