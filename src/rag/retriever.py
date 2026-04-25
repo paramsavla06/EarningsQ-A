@@ -25,8 +25,8 @@ class Retriever:
         self.documents = embedding_pipeline.documents
         self.embeddings = embedding_pipeline.embeddings
 
-    def _detect_company_intent(self, query: str) -> Optional[str]:
-        """Detect if the user is asking about a specific company by name."""
+    def _detect_company_intents(self, query: str) -> List[str]:
+        """Detect all companies requested."""
         query_lower = query.lower()
         mapping = {
             "532400": ["bsoft", "birlasoft", "birla soft", "birla soft limited", "532400"],
@@ -34,25 +34,27 @@ class Retriever:
             "543654": ["medanta", "global health", "543654"],
             "544350": ["agarwal", "544350"]
         }
+        found = []
         for cid, keywords in mapping.items():
             if any(k in query_lower for k in keywords):
-                return cid
-        return None
+                found.append(cid)
+        return found
 
-    def _detect_quarter_intent(self, query: str) -> Optional[str]:
-        """Detect if the user is asking about a specific quarter."""
+    def _detect_quarter_intents(self, query: str) -> List[str]:
+        """Detect all quarters requested."""
         query_upper = query.upper()
+        found = []
         for q in ["Q1", "Q2", "Q3", "Q4"]:
             if q in query_upper:
-                return q
-        return None
+                found.append(q)
+        return found
 
     def retrieve(
         self,
         query: str,
         top_k: int = TOP_K_RETRIEVAL,
-        company_id: Optional[str] = None,
-        quarter: Optional[str] = None,
+        company_ids: Optional[List[str]] = None,
+        quarters: Optional[List[str]] = None,
     ) -> List[Tuple[Document, float]]:
         """Retrieve top-K documents with smart intent detection.
         """
@@ -62,11 +64,11 @@ class Retriever:
             return []
 
         # 1. Intent Detection: Did the user name a company or quarter in the text?
-        if not company_id:
-            company_id = self._detect_company_intent(query)
+        if not company_ids:
+            company_ids = self._detect_company_intents(query)
 
-        if not quarter:
-            quarter = self._detect_quarter_intent(query)
+        if not quarters:
+            quarters = self._detect_quarter_intents(query)
 
         # 2. Embed query
         query_embedding = self.embedding_pipeline.embed_text(query)
@@ -111,9 +113,9 @@ class Retriever:
                 similarity = min(0.99, similarity + boost)
                 # -----------------------------
 
-                if company_id and doc.company_id != company_id:
+                if company_ids and doc.company_id not in company_ids:
                     continue
-                if quarter and doc.quarter != quarter:
+                if quarters and doc.quarter not in quarters:
                     continue
 
                 candidates.append((doc, similarity))
@@ -124,7 +126,7 @@ class Retriever:
         # --- Decision: Focus vs Diversity ---
 
         # If we have a specific company (via filter or intent), prioritize FOCUS
-        if company_id:
+        if company_ids and len(company_ids) == 1:
             candidates.sort(key=lambda x: x[1], reverse=True)
             return candidates[:top_k]
 
@@ -160,14 +162,14 @@ class Retriever:
 
     def retrieve_by_filters(
         self,
-        company_id: Optional[str] = None,
-        quarter: Optional[str] = None,
+        company_ids: Optional[List[str]] = None,
+        quarters: Optional[List[str]] = None,
     ) -> List[Document]:
         """Retrieve documents by company and quarter filters.
 
         Args:
-            company_id: Optional company filter
-            quarter: Optional quarter filter
+            company_ids: Optional list of company filters
+            quarters: Optional list of quarter filters
 
         Returns:
             List of matching documents
@@ -175,14 +177,14 @@ class Retriever:
         results = []
 
         for doc in self.documents:
-            if company_id and doc.company_id != company_id:
+            if company_ids and doc.company_id not in company_ids:
                 continue
-            if quarter and doc.quarter != quarter:
+            if quarters and doc.quarter not in quarters:
                 continue
             results.append(doc)
 
         logger.debug(
-            f"Retrieved {len(results)} documents for filters: company={company_id}, quarter={quarter}")
+            f"Retrieved {len(results)} documents for filters: companies={company_ids}, quarters={quarters}")
 
         return results
 

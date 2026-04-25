@@ -251,31 +251,6 @@ class EarningsQACLI:
         return len(cls._extract_mentioned_quarters(question)) > 1
 
     @staticmethod
-    def _has_multiple_company_request(question: str) -> bool:
-        """Detect whether a question explicitly mentions more than one company."""
-        company_names = [
-            "medanta", "global health",
-            "polycab",
-            "birlasoft",
-            "dr agarwal", "dr. agarwal", "agarwal eye",
-            "532400", "542652", "543654", "544350",
-        ]
-        q = question.lower()
-        found = [name for name in company_names if name in q]
-        # Deduplicate — "dr agarwal" and "dr. agarwal" count as the same company
-        unique_companies = set()
-        for name in found:
-            if name in ("dr agarwal", "dr. agarwal", "agarwal eye", "544350"):
-                unique_companies.add("agarwal")
-            elif name in ("medanta", "global health", "543654"):
-                unique_companies.add("medanta")
-            elif name in ("polycab", "542652"):
-                unique_companies.add("polycab")
-            elif name in ("birlasoft", "532400"):
-                unique_companies.add("birlasoft")
-        return len(unique_companies) > 1
-
-    @staticmethod
     def _extract_scope_from_text(text: str) -> Tuple[Optional[str], Optional[str]]:
         """Extract the most obvious company id and quarter from a text snippet."""
         text_lower = text.lower()
@@ -466,21 +441,21 @@ class EarningsQACLI:
         missed just because the relevant chunk was not among the top semantic hits.
         """
         if not self.retriever:
-            return retrieved_docs, None, None
+            return retrieved_docs, [], []
 
-        company_id = company_filter or self.retriever._detect_company_intent(
+        company_ids = [company_filter] if company_filter else self.retriever._detect_company_intents(
             question)
-        quarter = quarter_filter or self.retriever._detect_quarter_intent(
+        quarters = [quarter_filter] if quarter_filter else self.retriever._detect_quarter_intents(
             question)
 
-        if company_id or quarter:
+        if company_ids or quarters:
             docs = self.retriever.retrieve_by_filters(
-                company_id=company_id,
-                quarter=quarter,
+                company_ids=company_ids,
+                quarters=quarters,
             )
-            return [(doc, 1.0) for doc in docs], company_id, quarter
+            return [(doc, 1.0) for doc in docs], company_ids, quarters
 
-        return retrieved_docs, None, None
+        return retrieved_docs, [], []
 
     def _try_direct_metric_answer(
         self,
@@ -495,12 +470,7 @@ class EarningsQACLI:
         if not requested_metrics or not retrieved_docs:
             return None
 
-        if self._has_mixed_quarter_request(question):
-            return (
-                "I can only answer for one quarter at a time. Please ask a separate question for each quarter, or narrow your request to a single quarter."
-            )
-
-        lookup_docs, detected_company_id, detected_quarter = self._get_exact_lookup_documents(
+        lookup_docs, detected_company_ids, detected_quarters = self._get_exact_lookup_documents(
             question,
             retrieved_docs,
             company_filter=company_filter,
@@ -527,44 +497,31 @@ class EarningsQACLI:
                 "544350": "Dr. Agarwal's Eye Hospital"
             }
 
-            if detected_quarter:
-                # If a specific quarter was asked for, just get the best candidate overall
-                metric_score, metric_value, metric_text, metric_doc, metric_similarity, metric_position = max(
-                    candidates,
-                    key=lambda item: (item[0], item[4], item[1], -item[5]),
-                )
+            # Group candidates by (Company, Quarter) and get the best one for EACH pair
+            best_per_entity = {}
+            for cand in candidates:
+                entity_key = (cand[3].company_id,
+                              f"{cand[3].quarter} {cand[3].year}")
+                if entity_key not in best_per_entity or cand[0] > best_per_entity[entity_key][0]:
+                    best_per_entity[entity_key] = cand
+
+            # Sort by company name for organized output
+            sorted_results = sorted(best_per_entity.values(), key=lambda x: (
+                x[3].company_id, x[3].year, x[3].quarter))
+
+            current_company = None
+            for cand in sorted_results:
+                metric_score, metric_value, metric_text, metric_doc, metric_similarity, metric_position = cand
                 company_name = company_mapping.get(
                     metric_doc.company_id, f"Company {metric_doc.company_id}")
-                q_label = f"{metric_doc.quarter} {metric_doc.year}"
+
+                if company_name != current_company:
+                    lines.append(f"\n{metric_display} for {company_name}:")
+                    current_company = company_name
+
                 lines.append(
-                    f"Based on the transcript, {company_name} reported a {metric_display} of {metric_text} for {q_label} [{metric_doc.company_id} {metric_doc.quarter}{metric_doc.year} - Match: {metric_similarity:.2%}]."
+                    f"• {metric_doc.quarter} {metric_doc.year}: {metric_text} [{metric_doc.company_id} {metric_doc.quarter}{metric_doc.year} - Match: {metric_similarity:.2%}]"
                 )
-            else:
-                # Group candidates by (Company, Quarter) and get the best one for EACH pair
-                best_per_entity = {}
-                for cand in candidates:
-                    entity_key = (cand[3].company_id,
-                                  f"{cand[3].quarter} {cand[3].year}")
-                    if entity_key not in best_per_entity or cand[0] > best_per_entity[entity_key][0]:
-                        best_per_entity[entity_key] = cand
-
-                # Sort by company name for organized output
-                sorted_results = sorted(best_per_entity.values(), key=lambda x: (
-                    x[3].company_id, x[3].year, x[3].quarter))
-
-                current_company = None
-                for cand in sorted_results:
-                    metric_score, metric_value, metric_text, metric_doc, metric_similarity, metric_position = cand
-                    company_name = company_mapping.get(
-                        metric_doc.company_id, f"Company {metric_doc.company_id}")
-
-                    if company_name != current_company:
-                        lines.append(f"\n{metric_display} for {company_name}:")
-                        current_company = company_name
-
-                    lines.append(
-                        f"• {metric_doc.quarter} {metric_doc.year}: {metric_text} [{metric_doc.company_id} {metric_doc.quarter}{metric_doc.year} - Match: {metric_similarity:.2%}]"
-                    )
 
         # Return None if no metrics were extracted, so the LLM can take over
         if not lines:
@@ -604,12 +561,12 @@ class EarningsQACLI:
         if not retriever:
             return False
 
-        requested_company = retriever._detect_company_intent(question)
-        requested_quarter = retriever._detect_quarter_intent(question)
+        requested_companies = retriever._detect_company_intents(question)
+        requested_quarters = retriever._detect_quarter_intents(question)
 
-        if company_filter and requested_company and requested_company != company_filter:
+        if company_filter and requested_companies and company_filter not in requested_companies:
             return True
-        if quarter_filter and requested_quarter and requested_quarter != quarter_filter:
+        if quarter_filter and requested_quarters and quarter_filter not in requested_quarters:
             return True
 
         return False
@@ -711,18 +668,6 @@ class EarningsQACLI:
                     log_query(question, msg, company_filter, quarter_filter)
                     continue
 
-                # Detect multi-company questions early and redirect politely
-                if self._has_multiple_company_request(question):
-                    msg = (
-                        "I can only focus on one company at a time to give you accurate answers. "
-                        "Please ask about each company separately — for example: "
-                        "'How is Medanta doing in Q2?' and then 'What is Polycab's overall performance?'"
-                    )
-                    click.echo(f"\nAssistant: {msg}\n")
-                    self.conversation.add("user", question)
-                    self.conversation.add("assistant", msg)
-                    continue
-
                 # Retrieve relevant context from RAG
                 context = ""
                 retrieved_docs = []
@@ -752,8 +697,8 @@ class EarningsQACLI:
 
                     retrieved_docs = self.retriever.retrieve(
                         question,
-                        company_id=resolved_company_filter,
-                        quarter=resolved_quarter_filter,
+                        company_ids=[resolved_company_filter] if resolved_company_filter else None,
+                        quarters=[resolved_quarter_filter] if resolved_quarter_filter else None,
                     )
                     if retrieved_docs:
                         context = self.retriever.format_context(retrieved_docs)
@@ -776,43 +721,10 @@ class EarningsQACLI:
                     click.echo(direct_answer + "\n")
                     final_answer += direct_answer + "\n\n"
 
-                # Determine if we need the LLM to fill in gaps or answer qualitative parts
-                # 1. Did the regex fail to find one of the requested metrics?
-                # 2. Does the question contain qualitative words (why, how, etc.)?
-                # 3. Was there no direct answer at all?
-
-                requested_metrics = self._detect_requested_metrics(question)
-                qualitative_keywords = ["why", "how", "comment", "summarize", "summary",
-                                        "overview", "plans", "strategy", "expansion", "growth", "compare"]
-
-                is_pure_metric_query = len(requested_metrics) > 0 and not any(
-                    word in question.lower() for word in qualitative_keywords)
-
-                # Count how many successful metric lines were produced
-                # Each successful metric match produces at least one line containing "Match:" or a bullet point
-                metrics_found_count = 0
-                if direct_answer:
-                    for metric in requested_metrics:
-                        spec = self._metric_specs().get(metric)
-                        if spec and spec["display"].lower() in direct_answer.lower():
-                            metrics_found_count += 1
-
-                regex_found_all = (metrics_found_count == len(
-                    requested_metrics)) and len(requested_metrics) > 0
-
-                if is_pure_metric_query and regex_found_all:
-                    # We have everything! No need to call the expensive/noisy LLM.
-                    answered_text = direct_answer or ""
-                    self.conversation.add("user", question)
-                    self.conversation.add("assistant", answered_text.strip())
-                    log_query(question, answered_text.strip(),
-                              company_filter, quarter_filter)
-                    continue
-
                 # If we're here, we need the LLM.
                 if direct_answer:
                     # Add a separator to indicate the LLM is now answering the rest
-                    click.echo("--- Additional Context ---\n", nl=False)
+                    click.echo("--- Qualitative Analysis ---\n", nl=False)
 
                 # Call the LLM to cover anything not answered by Regex.
                 user_message = get_retrieval_prompt(
