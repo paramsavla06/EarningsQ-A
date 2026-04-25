@@ -28,6 +28,10 @@ Exact financial figures (revenue, PAT, EBITDA, margins, etc.) are extracted dete
 
 - Answers questions about company earnings calls, organised by company and quarter
 - **Deterministic metric extraction** for revenue, total income, PAT, EBITDA, gross/operating margin, cash flow, capex, PBT, and ARPOB — before any LLM call
+- **Instant Metrics**: Regex-extracted figures are printed immediately while the LLM generates the deeper qualitative analysis in the background
+- **Conditional LLM Skip**: Skips expensive LLM calls for simple metric questions when regex successfully finds the answer
+- **Multi-Entity Guardrail**: Politely prevents confusing multi-quarter or multi-company queries in a single turn to ensure data precision
+- **Interruptible Responses**: Press `Ctrl+C` to stop a long LLM generation without exiting the chatbot
 - **Hybrid RAG**: FAISS semantic retrieval with keyword boosting and diversity-aware ranking
 - Company and quarter **session filters** (`--company`, `--quarter`) for narrow, focused queries
 - **Multi-turn conversation memory** — follow-up questions resolve company/quarter from context automatically
@@ -49,7 +53,10 @@ User question
   → cache lookup                  (earnings_qa/core/cache.py)
       cache hit → return immediately
   → exact metric extraction       (earnings_qa/core/chat_service.py)
-      match found → direct answer (no LLM)
+      match found → print "Instant Metric" result
+  → multi-entity check            (ChatService.process_message)
+  → conditional LLM skip          (ChatService.process_message)
+      simple query + match found → skip LLM
   → conversation history lookup   (ChatService._resolve_scope_from_history)
   → FAISS retrieval + boosting    (earnings_qa/rag/retriever.py)
   → context assembly

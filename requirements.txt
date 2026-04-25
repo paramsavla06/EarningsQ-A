@@ -19,7 +19,8 @@ tenacity>=8.2.3,<10.0.0
 # Async support (used internally by anyio-backed frameworks)
 anyio>=4.8.0,<5.0.0
 
-# Optional: Ollama HTTP client fallback uses requests
+# Optional: Ollama HTTP client
+ollama>=0.4.7
 requests>=2.31.0,<3.0.0
 
 # Testing (dev only — not required for runtime)
