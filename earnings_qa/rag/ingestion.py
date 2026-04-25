@@ -156,7 +156,8 @@ class TranscriptIngestionPipeline:
             logger.error(f"Data directory not found: {data_dir}")
             return all_documents
 
-        manifest_path = Path(__file__).parent.parent.parent / "config" / "transcripts_manifest.json"
+        from earnings_qa.config import PACKAGE_ROOT
+        manifest_path = PACKAGE_ROOT / "config" / "transcripts_manifest.json"
         if not manifest_path.exists():
             logger.error(f"Manifest not found: {manifest_path}")
             return all_documents
