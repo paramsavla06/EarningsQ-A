@@ -31,7 +31,6 @@ Exact financial figures (revenue, PAT, EBITDA, margins, etc.) are extracted dete
 - **Instant Metrics**: Regex-extracted figures are printed immediately while the LLM generates the deeper qualitative analysis in the background
 - **Conditional LLM Skip**: Skips expensive LLM calls for simple metric questions when regex successfully finds the answer
 - **Multi-Entity Guardrail**: Politely prevents confusing multi-quarter or multi-company queries in a single turn to ensure data precision
-- **Interruptible Responses**: Press `Ctrl+C` to stop a long LLM generation without exiting the chatbot
 - **Hybrid RAG**: FAISS semantic retrieval with keyword boosting and diversity-aware ranking
 - Company and quarter **session filters** (`--company`, `--quarter`) for narrow, focused queries
 - **Multi-turn conversation memory** — follow-up questions resolve company/quarter from context automatically
@@ -306,13 +305,18 @@ earnings-qa --list-docs
 ### Example session
 
 ```
-You: What was Medanta's revenue in Q1?
+You: What was Medanta's revenue in Q2 and why did it grow?
 
-Direct Answer:
-Revenue for Global Health:
-• Q1 FY24: INR1,274 million [543654 Q1FY24 - Match: 87.42%]
+Assistant:
 
-[LLM analysis follows with qualitative context and growth drivers...]
+Revenue for Medanta:
+• Q2 2025: INR9,748 million [543654 Q22025 - Match: 100.00%]
+
+--- Qualitative Analysis ---
+The revenue growth of 3.1% (reaching INR 9,748 million) was primarily driven by:
+- Higher patient volumes and bed occupancy at the Gurgaon and Lucknow facilities.
+- Increased complexity of procedures in the cardiology and oncology departments.
+- A steady increase in international patient revenue as travel restrictions eased.
 ```
 
 ---
