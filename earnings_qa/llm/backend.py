@@ -24,6 +24,16 @@ class LLMBackend(ABC):
         pass
 
     @abstractmethod
+    async def answer_question_async(
+        self,
+        system_prompt: str,
+        user_message: str,
+        max_tokens: int = LLM_MAX_TOKENS,
+    ) -> str:
+        """Asynchronously generate a response from the LLM."""
+        pass
+
+    @abstractmethod
     def get_token_count_estimate(self, text: str) -> int:
         """Estimate the token count for a text snippet.
 

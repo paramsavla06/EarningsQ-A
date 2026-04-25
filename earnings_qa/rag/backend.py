@@ -28,6 +28,17 @@ class RetrieverBackend(ABC):
         pass
 
     @abstractmethod
+    async def retrieve_async(
+        self,
+        query: str,
+        top_k: int = TOP_K_RETRIEVAL,
+        company_ids: Optional[List[str]] = None,
+        quarters: Optional[List[str]] = None,
+    ) -> List[Tuple[Document, float]]:
+        """Retrieve top-K documents asynchronously."""
+        pass
+
+    @abstractmethod
     def retrieve_by_filters(
         self,
         company_ids: Optional[List[str]] = None,

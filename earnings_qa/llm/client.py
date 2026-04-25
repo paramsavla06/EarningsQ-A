@@ -76,15 +76,17 @@ class MockLLMClient(LLMBackend):
         else:
             return f"[MOCK] Based on the earnings call: {user_message}\n\nThis is a mock response for development and testing. In production mode, this would retrieve relevant sections from the earnings transcript and provide a context-grounded answer.\n\nNote: To enable real Gemini API calls, set USE_MOCK_LLM=false in your .env file.\n\n[This is a MOCK response for development]"
 
+    async def answer_question_async(
+        self,
+        system_prompt: str,
+        user_message: str,
+        max_tokens: int = LLM_MAX_TOKENS,
+    ) -> str:
+        import asyncio
+        return await asyncio.to_thread(self.answer_question, system_prompt, user_message, max_tokens)
+
     def get_token_count_estimate(self, text: str) -> int:
-        """Rough estimate of token count.
-
-        Args:
-            text: Text to estimate
-
-        Returns:
-            Approximate token count
-        """
+        """Rough estimate of token count."""
         return len(text) // 4
 
 
@@ -172,15 +174,17 @@ class LLMClient(LLMBackend):
             logger.error(f"Gemini API error: {e}")
             raise
 
+    async def answer_question_async(
+        self,
+        system_prompt: str,
+        user_message: str,
+        max_tokens: int = LLM_MAX_TOKENS,
+    ) -> str:
+        import asyncio
+        return await asyncio.to_thread(self.answer_question, system_prompt, user_message, max_tokens)
+
     def get_token_count_estimate(self, text: str) -> int:
-        """Rough estimate of token count (4 chars ≈ 1 token).
-
-        Args:
-            text: Text to estimate
-
-        Returns:
-            Approximate token count
-        """
+        """Rough estimate of token count (4 chars ≈ 1 token)."""
         return len(text) // 4
 
 
@@ -233,6 +237,15 @@ class OllamaLLMClient(LLMBackend):
         except Exception as e:
             logger.error(f"Ollama LLM error: {e}")
             raise
+
+    async def answer_question_async(
+        self,
+        system_prompt: str,
+        user_message: str,
+        max_tokens: int = LLM_MAX_TOKENS,
+    ) -> str:
+        import asyncio
+        return await asyncio.to_thread(self.answer_question, system_prompt, user_message, max_tokens)
 
     def get_token_count_estimate(self, text: str) -> int:
         return len(text) // 4

@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "earnings_qa"
+version = "0.1.0"
+description = "A scalable, metadata-driven Hybrid Financial RAG Chatbot."
+authors = [{name = "Financial Analyst"}]
+readme = "README.md"
+dependencies = [
+    "click",
+    "faiss-cpu",
+    "numpy",
+    "requests",
+    "python-dotenv",
+]
+
+[project.scripts]
+earnings-qa = "earnings_qa.cli.interface:main"

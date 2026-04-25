@@ -172,6 +172,16 @@ class Retriever(RetrieverBackend):
         cache.set_retrieval(query_lower, str(c_filter), str(q_filter), index_version, final_results)
         return final_results
 
+    async def retrieve_async(
+        self,
+        query: str,
+        top_k: int = TOP_K_RETRIEVAL,
+        company_ids: Optional[List[str]] = None,
+        quarters: Optional[List[str]] = None,
+    ) -> List[Tuple[Document, float]]:
+        import asyncio
+        return await asyncio.to_thread(self.retrieve, query, top_k, company_ids, quarters)
+
     def retrieve_by_filters(
         self,
         company_ids: Optional[List[str]] = None,
@@ -204,4 +214,10 @@ class Retriever(RetrieverBackend):
         """Return all documents in the index."""
         return self.documents
 
-
+    async def retrieve_by_filters_async(
+        self,
+        company_ids: Optional[List[str]] = None,
+        quarters: Optional[List[str]] = None,
+    ) -> List[Document]:
+        import asyncio
+        return await asyncio.to_thread(self.retrieve_by_filters, company_ids, quarters)
