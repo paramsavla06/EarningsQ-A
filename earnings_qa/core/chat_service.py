@@ -596,6 +596,32 @@ class ChatService:
             )
             return ChatResponse(request_id=request_id, error_msg=msg)
 
+        # ── Multi-entity guardrail ─────────────────────────────────────────────
+        if self.retriever:
+            detected_qs = self.retriever._detect_quarter_intents(question)
+            if len(set(detected_qs)) > 1:
+                msg = "To ensure the highest accuracy, please ask about one quarter at a time (e.g., just 'Q2' or just 'Q4'). This helps me focus on the specific financial details for that period!"
+                self.conversation.add("user", question)
+                self.conversation.add("assistant", msg)
+                log_query(question, msg, resolved_company_filter,
+                          resolved_quarter_filter)
+                emit(
+                    request_id=request_id,
+                    question=question,
+                    query_type="scope_error",
+                    company_id=resolved_company_filter,
+                    quarter=resolved_quarter_filter,
+                    retrieval_count=0,
+                    retrieval_confidence=None,
+                    direct_answer_used=False,
+                    cache_hit=False,
+                    latency_ms=(time.monotonic() - t_start) * 1000,
+                    backend_llm=backend_name,
+                    guardrail_version=GUARDRAIL_VERSION,
+                    guardrail_status="MULTI_QUARTER",
+                )
+                return ChatResponse(request_id=request_id, error_msg=msg)
+
         # ── Cache check ────────────────────────────────────────────────────────
         index_version = "unknown"
         if self.indexed and hasattr(self.retriever, 'embedding_pipeline'):
